@@ -1,0 +1,2 @@
+*.go text eol=lf
+bin/mycode text eol=lf

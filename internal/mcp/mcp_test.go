@@ -234,16 +234,17 @@ func runFakeMCPServer() {
 type protocolReader struct {
 	source   io.Reader
 	protocol string
+	decoder  *json.Decoder
 }
 
 func newProtocolReader(source io.Reader, protocol string) protocolReader {
-	return protocolReader{source: source, protocol: protocol}
+	return protocolReader{source: source, protocol: protocol, decoder: json.NewDecoder(source)}
 }
 
 func (r protocolReader) read() (map[string]any, error) {
 	if r.protocol == "newline-json" {
 		var msg map[string]any
-		err := json.NewDecoder(r.source).Decode(&msg)
+		err := r.decoder.Decode(&msg)
 		return msg, err
 	}
 	data, err := readContentLengthMessage(r.source)
