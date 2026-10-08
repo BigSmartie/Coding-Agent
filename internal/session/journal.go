@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,7 @@ const (
 	EventApprovalDecided   EventKind = "approval_decided"
 	EventTurnCompleted     EventKind = "turn_completed"
 	EventTurnFailed        EventKind = "turn_failed"
+	EventTurnAbandoned     EventKind = "turn_abandoned"
 	EventCheckpoint        EventKind = "checkpoint"
 )
 
@@ -38,6 +40,7 @@ const (
 	journalVersion = 1
 	maxEventBytes  = 16 << 20
 	maxJournalSize = 128 << 20
+	compactAtSize  = 32 << 20
 )
 
 type Event struct {
@@ -49,6 +52,7 @@ type Event struct {
 	CallID        string    `json:"callId,omitempty"`
 	ToolName      string    `json:"toolName,omitempty"`
 	Decision      string    `json:"decision,omitempty"`
+	Compacted     bool      `json:"compacted,omitempty"`
 	PrevHash      string    `json:"prevHash,omitempty"`
 	Hash          string    `json:"hash"`
 	Checkpoint    *Record   `json:"checkpoint,omitempty"`
@@ -63,6 +67,7 @@ type Journal struct {
 	seq      uint64
 	hash     string
 	bytes    int64
+	last     Event
 	closed   bool
 	poisoned bool
 }
@@ -116,6 +121,7 @@ func (s Store) OpenJournal(id string) (*Journal, error) {
 	if len(events) > 0 {
 		j.seq = events[len(events)-1].Sequence
 		j.hash = events[len(events)-1].Hash
+		j.last = events[len(events)-1]
 	}
 	return j, nil
 }
@@ -134,6 +140,10 @@ func (j *Journal) Append(event Event) (uint64, error) {
 func (j *Journal) AppendCheckpoint(record Record, turnID string) (Record, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	return j.appendCheckpointLocked(record, turnID)
+}
+
+func (j *Journal) appendCheckpointLocked(record Record, turnID string) (Record, error) {
 	record.ID = j.id
 	record.SchemaVersion = 2
 	record.JournalSequence = j.seq + 1
@@ -154,6 +164,9 @@ func (j *Journal) appendLocked(event Event) (uint64, error) {
 	}
 	if !validEventKind(event.Kind) {
 		return 0, fmt.Errorf("unknown journal event kind %q", event.Kind)
+	}
+	if event.Compacted {
+		return 0, fmt.Errorf("compacted marker is reserved for journal replacement")
 	}
 	event.SchemaVersion = journalVersion
 	event.Sequence = j.seq + 1
@@ -186,7 +199,133 @@ func (j *Journal) appendLocked(event Event) (uint64, error) {
 	j.seq = event.Sequence
 	j.hash = event.Hash
 	j.bytes += int64(len(data))
+	j.last = event
 	return j.seq, nil
+}
+
+// CompactIfNeeded retains the last durable checkpoint after its JSON snapshot
+// has been saved. The checkpoint keeps its sequence and hash, so a crash before
+// or after replacement can recover from either complete journal file.
+func (j *Journal) CompactIfNeeded() error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.bytes < compactAtSize {
+		return nil
+	}
+	return j.compactLocked()
+}
+
+// RecoverInterrupted abandons an unfinished turn at the last checkpoint. No
+// model or tool call is replayed. A tool start or approval decision requires
+// the caller to explicitly acknowledge possible external side effects.
+func (j *Journal) RecoverInterrupted(acknowledgeEffects bool) (Record, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.closed || j.poisoned {
+		return Record{}, fmt.Errorf("session journal is unavailable")
+	}
+	record, err := j.store.Load(j.id)
+	if err != nil {
+		return Record{}, err
+	}
+	if record.ResumeError == "" {
+		return record, nil
+	}
+	if record.ResumeError != interruptedTurnError {
+		return Record{}, fmt.Errorf("saved session cannot resume: %s", record.ResumeError)
+	}
+	events, _, err := readEvents(j.file, j.id)
+	if err != nil {
+		return Record{}, err
+	}
+	var effects bool
+	for _, event := range events {
+		if event.Sequence <= record.JournalSequence {
+			continue
+		}
+		if event.Kind == EventToolStarted || event.Kind == EventApprovalDecided {
+			effects = true
+		}
+	}
+	if effects && !acknowledgeEffects {
+		return Record{}, fmt.Errorf("interrupted turn may have external effects; review the workspace, then use --recover-interrupted with --resume to abandon that turn")
+	}
+	record.ResumeError = ""
+	if _, err := j.appendLocked(Event{Kind: EventTurnAbandoned}); err != nil {
+		return Record{}, err
+	}
+	record, err = j.appendCheckpointLocked(record, "")
+	if err != nil {
+		return Record{}, err
+	}
+	if err := j.store.Save(record); err != nil {
+		return Record{}, err
+	}
+	if j.bytes >= compactAtSize {
+		if err := j.compactLocked(); err != nil {
+			return Record{}, err
+		}
+	}
+	return record, nil
+}
+
+func (j *Journal) compactLocked() error {
+	if j.closed || j.poisoned || j.last.Kind != EventCheckpoint {
+		return fmt.Errorf("journal can only compact at a durable checkpoint")
+	}
+	path, err := j.store.journalPath(j.id)
+	if err != nil {
+		return err
+	}
+	root := j.last
+	root.Compacted = true
+	root.Hash = eventDigest(root)
+	data, err := json.Marshal(root)
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	temp, err := os.CreateTemp(filepath.Dir(path), ".journal-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(temp.Name())
+	if err := temp.Chmod(0o600); err != nil {
+		temp.Close()
+		return err
+	}
+	if _, err := temp.Write(data); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	if err := j.file.Close(); err != nil {
+		j.poisoned = true
+		return err
+	}
+	if err := os.Rename(temp.Name(), path); err != nil {
+		j.poisoned = true
+		return err
+	}
+	j.file, err = openRegularStateFile(path)
+	if err != nil {
+		j.poisoned = true
+		return err
+	}
+	if _, err := j.file.Seek(0, io.SeekEnd); err != nil {
+		j.poisoned = true
+		return err
+	}
+	j.bytes = int64(len(data))
+	j.last = root
+	j.hash = root.Hash
+	return nil
 }
 
 func (j *Journal) Close() error {
@@ -270,10 +409,18 @@ func readEvents(file *os.File, id string) ([]Event, int64, error) {
 		if err := json.Unmarshal(line, &event); err != nil {
 			return nil, 0, fmt.Errorf("invalid session journal event: %w", err)
 		}
-		if event.SchemaVersion != journalVersion || !validEventKind(event.Kind) || event.Sequence != uint64(len(events)+1) {
+		expected := uint64(1)
+		if len(events) > 0 {
+			expected = events[len(events)-1].Sequence + 1
+		} else if event.Kind == EventCheckpoint && event.Compacted {
+			// A compacted journal starts at a checkpoint with its original
+			// sequence and hash-chain predecessor retained as an anchor.
+			expected = event.Sequence
+		}
+		if event.SchemaVersion != journalVersion || !validEventKind(event.Kind) || event.Sequence != expected || event.Sequence == 0 || (event.Compacted && (len(events) > 0 || event.Kind != EventCheckpoint)) {
 			return nil, 0, fmt.Errorf("invalid session journal sequence or schema")
 		}
-		if event.PrevHash != previousHash || event.Hash != eventDigest(event) {
+		if (!event.Compacted || len(events) > 0) && event.PrevHash != previousHash || event.Hash != eventDigest(event) {
 			return nil, 0, fmt.Errorf("session journal integrity check failed")
 		}
 		if event.Kind == EventCheckpoint && (event.Checkpoint == nil || event.Checkpoint.ID != id || event.Checkpoint.SchemaVersion != 2 || event.Checkpoint.JournalSequence != event.Sequence) {
@@ -316,7 +463,7 @@ func validEventKind(kind EventKind) bool {
 	switch kind {
 	case EventTurnStarted, EventModelStarted, EventModelCompleted, EventModelFailed,
 		EventToolStarted, EventToolCompleted, EventApprovalRequested, EventApprovalDecided,
-		EventTurnCompleted, EventTurnFailed, EventCheckpoint:
+		EventTurnCompleted, EventTurnFailed, EventTurnAbandoned, EventCheckpoint:
 		return true
 	default:
 		return false

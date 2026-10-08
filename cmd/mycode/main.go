@@ -133,7 +133,7 @@ func run(ctx context.Context, argv []string) error {
 	}
 	defer journal.Close()
 	if resuming {
-		record, err := loadSessionRecord(store, sessionID)
+		record, err := store.Load(sessionID)
 		if err != nil {
 			return err
 		}
@@ -142,6 +142,10 @@ func run(ctx context.Context, argv []string) error {
 		currentCWD, currentErr := workspace.Canonical(cwd)
 		if err != nil || currentErr != nil || savedCWD != currentCWD {
 			return fmt.Errorf("saved session belongs to another workspace; resume it from its original directory")
+		}
+		record, err = journal.RecoverInterrupted(startup.RecoverInterrupted)
+		if err != nil {
+			return err
 		}
 		for _, msg := range record.Messages {
 			if msg.Role != message.RoleSystem {
@@ -178,9 +182,10 @@ func run(ctx context.Context, argv []string) error {
 }
 
 type startupArgs struct {
-	ResumeID       string
-	ForceTUI       bool
-	ManagementArgs []string
+	ResumeID           string
+	RecoverInterrupted bool
+	ForceTUI           bool
+	ManagementArgs     []string
 }
 
 func parseStartupArgs(argv []string) (startupArgs, error) {
@@ -195,28 +200,16 @@ func parseStartupArgs(argv []string) (startupArgs, error) {
 			i++
 		case "--tui":
 			out.ForceTUI = true
+		case "--recover-interrupted":
+			out.RecoverInterrupted = true
 		default:
 			out.ManagementArgs = append(out.ManagementArgs, argv[i])
 		}
 	}
+	if out.RecoverInterrupted && out.ResumeID == "" {
+		return startupArgs{}, fmt.Errorf("--recover-interrupted requires --resume <id|latest>")
+	}
 	return out, nil
-}
-
-func loadSessionRecord(store session.Store, id string) (session.Record, error) {
-	var record session.Record
-	var err error
-	if id == "latest" {
-		record, err = store.Latest()
-	} else {
-		record, err = store.Load(id)
-	}
-	if err != nil {
-		return session.Record{}, err
-	}
-	if record.ResumeError != "" {
-		return session.Record{}, fmt.Errorf("saved session cannot resume: %s", record.ResumeError)
-	}
-	return record, nil
 }
 
 func usage() string {

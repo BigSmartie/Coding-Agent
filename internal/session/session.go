@@ -14,6 +14,7 @@ import (
 	"github.com/BigSmartie/Coding-Agent/internal/commands"
 	"github.com/BigSmartie/Coding-Agent/internal/config"
 	"github.com/BigSmartie/Coding-Agent/internal/message"
+	"github.com/BigSmartie/Coding-Agent/internal/model"
 	"github.com/BigSmartie/Coding-Agent/internal/safety"
 	"github.com/BigSmartie/Coding-Agent/internal/tools"
 )
@@ -139,6 +140,13 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 		fmt.Fprintln(s.args.Out, "provider: "+s.args.Runtime.Provider)
 		fmt.Fprintln(s.args.Out, "model: "+s.args.Runtime.Model)
 		fmt.Fprintln(s.args.Out, "baseUrl: "+s.args.Runtime.BaseURL)
+		capabilities := model.CapabilitiesFor(*s.args.Runtime)
+		if capabilities.ContextWindowTokens > 0 {
+			fmt.Fprintf(s.args.Out, "context window: %d tokens (%s)\n", capabilities.ContextWindowTokens, capabilities.ContextWindowSource)
+		} else {
+			fmt.Fprintln(s.args.Out, "context window: unknown; set contextWindowTokens in user settings")
+		}
+		fmt.Fprintln(s.args.Out, "wire API: "+capabilities.WireAPI)
 		auth := "API_KEY"
 		if s.args.Runtime.AuthToken != "" {
 			auth = "AUTH_TOKEN"
@@ -347,5 +355,8 @@ func (s *Session) finishTurn(turnID string, messages []message.Message, turnErr 
 	if err != nil {
 		return err
 	}
-	return s.args.Store.Save(record)
+	if err := s.args.Store.Save(record); err != nil {
+		return err
+	}
+	return s.args.Journal.CompactIfNeeded()
 }

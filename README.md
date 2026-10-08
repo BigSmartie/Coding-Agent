@@ -96,6 +96,17 @@ Migration does not rotate credentials at the provider.
 
 Project settings may contain `model`, `maxOutputTokens` and MCP definitions.
 Project `env`, `provider`, credential references and endpoint overrides are rejected.
+Set `contextWindowTokens` in private user settings (or
+`MY_CODE_CONTEXT_WINDOW_TOKENS` in the process environment) when the chosen
+model's context limit is known; the app does not guess gateway limits. Project
+settings cannot override this value. `/status` shows the configured limit or
+`unknown`.
+
+An interrupted session can be reopened with `mycode --resume <id|latest>` if
+no tool or approval decision was reached. If a tool may have changed external
+state, inspect the workspace first, then use
+`mycode --resume <id|latest> --recover-interrupted` to abandon the unfinished
+turn at its last checkpoint. The tool is never executed again automatically.
 
 ## Commands and MCP in an Isolated Sandbox
 

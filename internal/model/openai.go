@@ -222,15 +222,23 @@ type openAIResponsesResponse struct {
 }
 
 type openAIUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens        int `json:"prompt_tokens"`
+	CompletionTokens    int `json:"completion_tokens"`
+	TotalTokens         int `json:"total_tokens"`
+	PromptTokensDetails struct {
+		CachedTokens     int `json:"cached_tokens"`
+		CacheWriteTokens int `json:"cache_write_tokens"`
+	} `json:"prompt_tokens_details"`
 }
 
 type openAIResponsesUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-	TotalTokens  int `json:"total_tokens"`
+	InputTokens        int `json:"input_tokens"`
+	OutputTokens       int `json:"output_tokens"`
+	TotalTokens        int `json:"total_tokens"`
+	InputTokensDetails struct {
+		CachedTokens     int `json:"cached_tokens"`
+		CacheWriteTokens int `json:"cache_write_tokens"`
+	} `json:"input_tokens_details"`
 }
 
 type openAIResponseOutputItem struct {
@@ -500,15 +508,19 @@ func openAIUsageToDiagnostics(usage any) message.TokenUsage {
 	switch typed := usage.(type) {
 	case openAIUsage:
 		return message.TokenUsage{
-			InputTokens:  typed.PromptTokens,
-			OutputTokens: typed.CompletionTokens,
-			TotalTokens:  typed.TotalTokens,
+			InputTokens:      typed.PromptTokens,
+			OutputTokens:     typed.CompletionTokens,
+			TotalTokens:      typed.TotalTokens,
+			CacheReadTokens:  typed.PromptTokensDetails.CachedTokens,
+			CacheWriteTokens: typed.PromptTokensDetails.CacheWriteTokens,
 		}
 	case openAIResponsesUsage:
 		return message.TokenUsage{
-			InputTokens:  typed.InputTokens,
-			OutputTokens: typed.OutputTokens,
-			TotalTokens:  typed.TotalTokens,
+			InputTokens:      typed.InputTokens,
+			OutputTokens:     typed.OutputTokens,
+			TotalTokens:      typed.TotalTokens,
+			CacheReadTokens:  typed.InputTokensDetails.CachedTokens,
+			CacheWriteTokens: typed.InputTokensDetails.CacheWriteTokens,
 		}
 	default:
 		return message.TokenUsage{}

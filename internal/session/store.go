@@ -22,6 +22,8 @@ type Store struct {
 	Context context.Context
 }
 
+const interruptedTurnError = "The previous turn stopped before its checkpoint. Tool effects may already exist; automatic replay is disabled. Start a new session after reviewing the workspace."
+
 type Record struct {
 	SchemaVersion   int               `json:"schemaVersion,omitempty"`
 	JournalSequence uint64            `json:"journalSequence,omitempty"`
@@ -196,8 +198,17 @@ func (s Store) Load(id string) (Record, error) {
 	if len(events) > 0 && record.JournalSequence > events[len(events)-1].Sequence {
 		return Record{}, fmt.Errorf("session checkpoint is ahead of its journal")
 	}
-	if record.JournalSequence > 0 && events[record.JournalSequence-1].Kind != EventCheckpoint {
-		return Record{}, fmt.Errorf("session checkpoint sequence does not reference a checkpoint")
+	if record.JournalSequence > 0 && len(events) > 0 && record.JournalSequence >= events[0].Sequence {
+		found := false
+		for _, event := range events {
+			if event.Sequence == record.JournalSequence {
+				found = event.Kind == EventCheckpoint
+				break
+			}
+		}
+		if !found {
+			return Record{}, fmt.Errorf("session checkpoint sequence does not reference a checkpoint")
+		}
 	}
 	for _, event := range events {
 		if event.Kind != EventCheckpoint || event.Sequence <= record.JournalSequence {
@@ -212,8 +223,8 @@ func (s Store) Load(id string) (Record, error) {
 		}
 		record = checkpoint
 	}
-	if len(events) > 0 && events[len(events)-1].Sequence > record.JournalSequence {
-		record.ResumeError = "The previous turn stopped before its checkpoint. Tool effects may already exist; automatic replay is disabled. Start a new session after reviewing the workspace."
+	if len(events) > 0 && events[len(events)-1].Sequence > record.JournalSequence && record.ResumeError == "" {
+		record.ResumeError = interruptedTurnError
 	}
 	return record, nil
 }

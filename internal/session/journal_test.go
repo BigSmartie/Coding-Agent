@@ -57,6 +57,82 @@ func TestJournalReplaysCompletedCheckpointAfterSnapshotCrash(t *testing.T) {
 	}
 }
 
+func TestJournalCompactionPreservesSequenceAndCrashReplay(t *testing.T) {
+	store := Store{Dir: t.TempDir()}
+	baseline := Record{ID: "session-1", Messages: []message.Message{message.UserMessage("old")}}
+	if err := store.Save(baseline); err != nil {
+		t.Fatal(err)
+	}
+	j, err := store.OpenJournal(baseline.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []EventKind{EventTurnStarted, EventModelStarted, EventModelCompleted, EventTurnCompleted} {
+		if _, err := j.Append(Event{Kind: kind}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	checkpoint, err := j.AppendCheckpoint(Record{ID: baseline.ID, Messages: []message.Message{message.UserMessage("new")}}, "turn-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Force the size trigger without writing megabytes in the test. Simulate a
+	// crash after journal replacement but before the JSON snapshot save.
+	j.bytes = compactAtSize
+	if err := j.CompactIfNeeded(); err != nil {
+		t.Fatal(err)
+	}
+	if j.bytes >= compactAtSize {
+		t.Fatal("journal was not compacted")
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Load(baseline.ID)
+	if err != nil || loaded.JournalSequence != checkpoint.JournalSequence || loaded.Messages[0].Content != "new" {
+		t.Fatalf("compacted checkpoint did not replay: %#v, %v", loaded, err)
+	}
+	j, err = store.OpenJournal(baseline.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seq, err := j.Append(Event{Kind: EventTurnStarted}); err != nil || seq != checkpoint.JournalSequence+1 {
+		t.Fatalf("sequence after compaction = %d, %v", seq, err)
+	}
+	j.Close()
+	events, err := store.readJournal(baseline.ID)
+	if err != nil || len(events) != 2 || events[0].Kind != EventCheckpoint {
+		t.Fatalf("unexpected compacted journal: %#v, %v", events, err)
+	}
+}
+
+func TestJournalRejectsUnmarkedMissingPrefix(t *testing.T) {
+	store := Store{Dir: t.TempDir()}
+	j, err := store.OpenJournal("session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.Append(Event{Kind: EventTurnStarted}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.AppendCheckpoint(Record{ID: "session-1"}, "turn-1"); err != nil {
+		t.Fatal(err)
+	}
+	j.Close()
+	path, _ := store.journalPath("session-1")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(data), "\n")
+	if err := os.WriteFile(path, []byte(lines[1]+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.OpenJournal("session-1"); err == nil {
+		t.Fatal("unmarked missing prefix was accepted as compaction")
+	}
+}
+
 func TestJournalIncompleteToolTurnBlocksResumeWithoutReplay(t *testing.T) {
 	store := Store{Dir: t.TempDir()}
 	if err := store.Save(Record{ID: "session-1", Messages: []message.Message{message.UserMessage("before")}}); err != nil {
@@ -80,6 +156,69 @@ func TestJournalIncompleteToolTurnBlocksResumeWithoutReplay(t *testing.T) {
 	}
 	if loaded.ResumeError == "" || len(loaded.Messages) != 1 || loaded.Messages[0].Content != "before" {
 		t.Fatalf("unsafe interrupted turn was resumed: %#v", loaded)
+	}
+}
+
+func TestJournalRecoversOnlySideEffectFreeInterruptedTurnAutomatically(t *testing.T) {
+	store := Store{Dir: t.TempDir()}
+	if err := store.Save(Record{ID: "session-1", Messages: []message.Message{message.UserMessage("before")}}); err != nil {
+		t.Fatal(err)
+	}
+	j, err := store.OpenJournal("session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []EventKind{EventTurnStarted, EventModelStarted} {
+		if _, err := j.Append(Event{Kind: kind}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	j.Close()
+	j, err = store.OpenJournal("session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := j.RecoverInterrupted(false)
+	if err != nil || recovered.ResumeError != "" || len(recovered.Messages) != 1 || recovered.Messages[0].Content != "before" {
+		t.Fatalf("side-effect-free recovery failed: %#v, %v", recovered, err)
+	}
+	j.Close()
+	loaded, err := store.Load("session-1")
+	if err != nil || loaded.ResumeError != "" {
+		t.Fatalf("recovery did not persist: %#v, %v", loaded, err)
+	}
+}
+
+func TestJournalRecoveryRequiresAcknowledgementAfterToolStart(t *testing.T) {
+	store := Store{Dir: t.TempDir()}
+	if err := store.Save(Record{ID: "session-1", Messages: []message.Message{message.UserMessage("before")}}); err != nil {
+		t.Fatal(err)
+	}
+	j, err := store.OpenJournal("session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []EventKind{EventTurnStarted, EventToolStarted} {
+		if _, err := j.Append(Event{Kind: kind}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	j.Close()
+	j, err = store.OpenJournal("session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.RecoverInterrupted(false); err == nil || !strings.Contains(err.Error(), "--recover-interrupted") {
+		t.Fatalf("tool effects were silently abandoned: %v", err)
+	}
+	recovered, err := j.RecoverInterrupted(true)
+	if err != nil || recovered.ResumeError != "" || len(recovered.Messages) != 1 {
+		t.Fatalf("acknowledged recovery failed: %#v, %v", recovered, err)
+	}
+	j.Close()
+	loaded, err := store.Load("session-1")
+	if err != nil || loaded.ResumeError != "" {
+		t.Fatalf("acknowledged recovery did not persist: %#v, %v", loaded, err)
 	}
 }
 

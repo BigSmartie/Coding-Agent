@@ -44,6 +44,33 @@ func TestLoadRuntimeConfigMergesSettingsAndEnv(t *testing.T) {
 	}
 }
 
+func TestContextWindowMustBeSetByUserAndWithinBounds(t *testing.T) {
+	home := t.TempDir()
+	cwd := t.TempDir()
+	IsolateTestEnv(t, home)
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "fixture")
+	t.Setenv("ANTHROPIC_MODEL", "model")
+	if err := SaveSettings(Settings{ContextWindowTokens: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := LoadRuntime(cwd)
+	if err != nil || runtime.ContextWindowTokens != 100000 {
+		t.Fatalf("configured context window missing: %#v, %v", runtime, err)
+	}
+	t.Setenv("MY_CODE_CONTEXT_WINDOW_TOKENS", "not-a-number")
+	if _, err := LoadRuntime(cwd); err == nil {
+		t.Fatal("invalid context window was accepted")
+	}
+	t.Setenv("MY_CODE_CONTEXT_WINDOW_TOKENS", "10000001")
+	if _, err := LoadRuntime(cwd); err == nil {
+		t.Fatal("unbounded context window was accepted")
+	}
+	writeFixture(t, ProjectSettingsPath(cwd), `{"contextWindowTokens":9999999}`)
+	if _, err := LoadEffectiveSettings(cwd); err == nil {
+		t.Fatal("project was allowed to invent trusted context metadata")
+	}
+}
+
 func TestLoadRuntimeSupportsOpenAIProvider(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
