@@ -26,7 +26,12 @@ jobs:
           cache-dependency-path: go.sum
       - name: Verify formatting
         shell: bash
-        run: test -z "$(gofmt -l cmd internal)"
+        run: |
+          unformatted="$(gofmt -l cmd internal)"
+          if [ -n "$unformatted" ]; then
+            printf 'Files requiring gofmt:\n%s\n' "$unformatted"
+            exit 1
+          fi
       - run: go mod verify
       - run: go vet ./...
       - run: go test -race -count=1 -timeout=5m ./...
