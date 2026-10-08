@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/BigSmartie/Coding-Agent/internal/workspace"
 )
 
 func TestDangerousCommandRequiresPrompt(t *testing.T) {
@@ -85,7 +87,11 @@ func TestSummaryIncludesPersistentAllowlists(t *testing.T) {
 	}
 
 	summary := strings.Join(pm.Summary(), "\n")
-	for _, want := range []string{"cwd: " + cwd, "extra allowed dirs:", "approved command ids: command-v1:", "trusted edit targets:"} {
+	canonicalCWD, err := workspace.Canonical(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"cwd: " + canonicalCWD, "extra allowed dirs:", "approved command ids: command-v1:", "trusted edit targets:"} {
 		if !strings.Contains(summary, want) {
 			t.Fatalf("summary missing %q:\n%s", want, summary)
 		}

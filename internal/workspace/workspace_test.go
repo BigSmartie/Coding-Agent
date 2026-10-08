@@ -20,7 +20,10 @@ func TestResolveAllowsWorkspacePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(cwd, "README.md")
+	want, err := Canonical(filepath.Join(cwd, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
