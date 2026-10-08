@@ -33,6 +33,19 @@ type SlashCommand struct {
 	Description string
 }
 
+type InfoSection struct {
+	Title string
+	Body  string
+}
+
+type ComposerOptions struct {
+	Width       int
+	Prompt      string
+	Placeholder string
+	RightText   string
+	FooterText  string
+}
+
 type KeyName string
 
 const (

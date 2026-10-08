@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ssbsunshengbo/minicode-go/internal/config"
-	"github.com/ssbsunshengbo/minicode-go/internal/message"
-	"github.com/ssbsunshengbo/minicode-go/internal/tools"
+	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/message"
+	"github.com/BigSmartie/Coding-Agent/internal/tools"
 )
 
 func NewFromRuntime(runtime config.Runtime, registry *tools.Registry) (message.Model, error) {

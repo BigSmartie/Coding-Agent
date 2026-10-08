@@ -2,6 +2,10 @@
 
 [English](./ARCHITECTURE.md)
 
+> 本文保留 TypeScript 参考实现的历史架构。当前 Go Alpha 的运行时结构、
+> 安全边界和 P1 计划以 [ARCHITECTURE.md](ARCHITECTURE.md)、
+> [SECURITY.md](SECURITY.md) 和 [ROADMAP_ZH.md](ROADMAP_ZH.md) 为准。
+
 这个文档描述 `mini-code` 的轻量化架构设计决策。
 目标不是把终端 agent 做成“大而全”的平台，而是优先保留最有价值的执行闭环、交互体验和安全边界。
 

@@ -33,7 +33,9 @@ Claude Code 把会话中的不同状态拆成不同类型的消息或事件，�
 
 ### 通过 MiniCode 可以看到的对应实现
 
-MiniCode 没有把 transcript 只当作字符串列表处理，而是引入了结构化消息角色。当前项目区分了普通 assistant、progress、tool call、tool result 以及 context summary。loop 判定、TUI 展示和上下文压缩建立在这些状态之上。
+MiniCode 没有把 transcript 只当作字符串列表处理，而是引入了结构化消息角色。
+当前项目区分普通 assistant、progress、tool call、tool result 和 provider 续传状态；
+持久化的上下文压缩事件属于 P1 目标。
 
 ## 3. Tool Use 作为协议
 
@@ -95,7 +97,7 @@ Claude Code 的 skills 更像工作流扩展，而不是重型插件系统。重
 
 MiniCode 在 skills 上采用了同样的轻量思路。项目通过本地 `SKILL.md` 发现和加载技能，把它们作为 prompt 和任务执行的一部分。
 
-## 8. 自动上下文压缩
+## 8. 上下文压缩（P1 目标）
 
 ### Claude Code 的设计方案
 
@@ -103,7 +105,8 @@ Claude Code 的上下文压缩不是简单删除旧消息，而是把较早上�
 
 ### 通过 MiniCode 可以看到的对应实现
 
-MiniCode 也采用了这个方向。项目会在长会话中自动检查上下文规模，在达到阈值时生成 `context_summary`，用摘要替换较早历史，同时保留最近的原始消息继续会话。
+MiniCode 当前尚未实现长会话自动压缩。P1 会先建立持久事件日志和上下文预算，
+再投影出“摘要 + 最近完整回合”，并保证不拆散 tool-call/result 或破坏 provider state。
 
 ## 9. TUI 作为状态机的可视化层
 
@@ -131,7 +134,7 @@ MiniCode 保留的是核心设计方案，而不是完整搬运所有实现细�
 - 审批嵌入执行路径
 - MCP 动态接入
 - skills 工作流扩展
-- 自动上下文压缩
+- 可恢复会话快照；持久化上下文压缩属于 P1 目标
 - 状态化 TUI
 
 它对应的是一个小体量的 Claude Code 风格参考实现，而不是完整复刻版本。

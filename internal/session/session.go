@@ -8,11 +8,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ssbsunshengbo/minicode-go/internal/agent"
-	"github.com/ssbsunshengbo/minicode-go/internal/commands"
-	"github.com/ssbsunshengbo/minicode-go/internal/config"
-	"github.com/ssbsunshengbo/minicode-go/internal/message"
-	"github.com/ssbsunshengbo/minicode-go/internal/tools"
+	"github.com/BigSmartie/Coding-Agent/internal/agent"
+	"github.com/BigSmartie/Coding-Agent/internal/brand"
+	"github.com/BigSmartie/Coding-Agent/internal/commands"
+	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/message"
+	"github.com/BigSmartie/Coding-Agent/internal/safety"
+	"github.com/BigSmartie/Coding-Agent/internal/tools"
 )
 
 type Args struct {
@@ -30,28 +32,62 @@ type Args struct {
 }
 
 type Session struct {
-	args Args
+	args      Args
+	ownsInput bool
 }
 
 func New(args Args) *Session {
+	if args.Store.Context == nil {
+		args.Store.Context = context.Background()
+	}
+	if args.Runtime != nil {
+		args.Store.Context = safety.WithSecrets(args.Store.Context, args.Runtime.APIKey, args.Runtime.AuthToken)
+	}
+	args.History.Context = args.Store.Context
 	if args.In == nil {
 		args.In = os.Stdin
 	}
 	if args.Out == nil {
 		args.Out = os.Stdout
 	}
-	return &Session{args: args}
+	stdin, isFile := args.In.(*os.File)
+	return &Session{args: args, ownsInput: isFile && stdin == os.Stdin}
 }
 
 func (s *Session) Run(ctx context.Context) error {
 	scanner := bufio.NewScanner(s.args.In)
 	historyEntries, _ := s.args.History.Load()
 	for {
-		fmt.Fprint(s.args.Out, "minicode> ")
-		if !scanner.Scan() {
-			return scanner.Err()
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		input := strings.TrimSpace(scanner.Text())
+		fmt.Fprint(s.args.Out, brand.CommandName+"> ")
+		// Request one line at a time so this reader does not compete with an
+		// approval prompt while the agent is running. A caller-provided blocking
+		// reader remains its owner's responsibility to close on cancellation.
+		type scanResult struct {
+			text string
+			ok   bool
+			err  error
+		}
+		read := make(chan scanResult, 1)
+		go func() { ok := scanner.Scan(); read <- scanResult{text: scanner.Text(), ok: ok, err: scanner.Err()} }()
+		var line scanResult
+		select {
+		case <-ctx.Done():
+			if s.ownsInput {
+				_ = os.Stdin.Close()
+			}
+			return ctx.Err()
+		case line = <-read:
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if !line.ok {
+			return line.err
+		}
+		input := strings.TrimSpace(line.text)
 		if input == "/exit" {
 			return nil
 		}
@@ -60,12 +96,15 @@ func (s *Session) Run(ctx context.Context) error {
 			_ = s.args.History.Save(historyEntries)
 		}
 		if err := s.RunOnce(ctx, input); err != nil {
-			fmt.Fprintln(s.args.Out, err)
+			fmt.Fprintln(s.args.Out, safety.EscapeTerminal(safety.Redact(ctx, err.Error())))
 		}
 	}
 }
 
 func (s *Session) RunOnce(ctx context.Context, input string) error {
+	previousOut := s.args.Out
+	s.args.Out = plainWriter{out: previousOut, ctx: s.args.Store.Context}
+	defer func() { s.args.Out = previousOut }()
 	if strings.TrimSpace(input) == "" {
 		return nil
 	}
@@ -80,9 +119,9 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 		return nil
 	}
 	if input == "/config-paths" {
-		fmt.Fprintln(s.args.Out, "mini-code settings: "+config.SettingsPath())
-		fmt.Fprintln(s.args.Out, "mini-code permissions: "+config.PermissionsPath())
-		fmt.Fprintln(s.args.Out, "mini-code mcp: "+config.MCPPath())
+		fmt.Fprintln(s.args.Out, brand.AgentName+" settings: "+config.SettingsPath())
+		fmt.Fprintln(s.args.Out, brand.AgentName+" permissions: "+config.PermissionsPath())
+		fmt.Fprintln(s.args.Out, brand.AgentName+" mcp: "+config.MCPPath())
 		fmt.Fprintln(s.args.Out, "compat fallback: "+config.ClaudeSettingsPath())
 		return nil
 	}
@@ -118,7 +157,7 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 	if strings.HasPrefix(input, "/model ") {
 		modelName := strings.TrimSpace(strings.TrimPrefix(input, "/model "))
 		if modelName == "" {
-			fmt.Fprintln(s.args.Out, "用法: /model <model-name>")
+			fmt.Fprintln(s.args.Out, "usage: /model <model-name>")
 			return nil
 		}
 		if err := config.SaveSettings(config.Settings{Model: modelName}); err != nil {
@@ -130,7 +169,7 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 	if input == "/skills" {
 		skills := s.args.Tools.Skills()
 		if len(skills) == 0 {
-			fmt.Fprintln(s.args.Out, "No skills discovered. Add skills under ~/.mini-code/skills/<name>/SKILL.md, .mini-code/skills/<name>/SKILL.md, .claude/skills/<name>/SKILL.md, or ~/.claude/skills/<name>/SKILL.md.")
+			fmt.Fprintln(s.args.Out, "No skills discovered. Add skills under ~/"+brand.ConfigDirName+"/skills/<name>/SKILL.md, "+brand.ConfigDirName+"/skills/<name>/SKILL.md, .claude/skills/<name>/SKILL.md, or ~/.claude/skills/<name>/SKILL.md.")
 			return nil
 		}
 		for _, skill := range skills {
@@ -141,7 +180,7 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 	if input == "/mcp" {
 		servers := s.args.Tools.MCPServers()
 		if len(servers) == 0 {
-			fmt.Fprintln(s.args.Out, "No MCP servers configured. Add mcpServers to ~/.mini-code/settings.json, ~/.mini-code/mcp.json, or project .mcp.json.")
+			fmt.Fprintln(s.args.Out, "No MCP servers configured. Add mcpServers to ~/"+brand.ConfigDirName+"/settings.json, ~/"+brand.ConfigDirName+"/mcp.json, or project .mcp.json.")
 			return nil
 		}
 		for _, server := range servers {
@@ -163,6 +202,13 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 		return nil
 	}
 	if call, ok := commands.ParseShortcut(input); ok {
+		if lifecycle, ok := s.args.Permission.(interface {
+			BeginTurn()
+			EndTurn()
+		}); ok {
+			lifecycle.BeginTurn()
+			defer lifecycle.EndTurn()
+		}
 		result := s.args.Tools.Execute(ctx, call.ToolName, call.Input, tools.Context{CWD: s.args.CWD, Permission: s.args.Permission})
 		if result.OK {
 			fmt.Fprintln(s.args.Out, result.Output)
@@ -174,10 +220,10 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 	if strings.HasPrefix(input, "/") {
 		matches := commands.FindMatching(input)
 		if len(matches) > 0 {
-			fmt.Fprintln(s.args.Out, "未识别命令。你是不是想输入：")
+			fmt.Fprintln(s.args.Out, "Unknown command. Did you mean:")
 			fmt.Fprintln(s.args.Out, strings.Join(matches, "\n"))
 		} else {
-			fmt.Fprintln(s.args.Out, "未识别命令。输入 /help 查看可用命令。")
+			fmt.Fprintln(s.args.Out, "Unknown command. Type /help to see available commands.")
 		}
 		return nil
 	}
@@ -197,8 +243,8 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 		},
 	})
 	if err != nil {
-		content := "请求失败: " + err.Error()
-		s.args.Messages = append(messages, message.AssistantMessage(content))
+		content := "request failed: " + err.Error()
+		s.args.Messages = append(next, message.AssistantMessage(content))
 		if persistErr := s.persistMessages(); persistErr != nil {
 			return persistErr
 		}
@@ -216,6 +262,19 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 		}
 	}
 	return nil
+}
+
+type plainWriter struct {
+	out io.Writer
+	ctx context.Context
+}
+
+func (w plainWriter) Write(data []byte) (int, error) {
+	_, err := io.WriteString(w.out, safety.EscapeTerminal(safety.Redact(w.ctx, string(data))))
+	if err != nil {
+		return 0, err
+	}
+	return len(data), nil
 }
 
 func (s *Session) persistMessages() error {

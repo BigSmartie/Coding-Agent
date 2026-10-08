@@ -1,6 +1,9 @@
 package message
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+)
 
 type Role string
 
@@ -11,6 +14,7 @@ const (
 	RoleAssistantProgress Role = "assistant_progress"
 	RoleAssistantToolCall Role = "assistant_tool_call"
 	RoleToolResult        Role = "tool_result"
+	RoleProviderState     Role = "provider_state"
 )
 
 type Message struct {
@@ -20,6 +24,15 @@ type Message struct {
 	ToolName  string
 	Input     any
 	IsError   bool
+	// ProviderState is opaque protocol output, retained for lossless continuation.
+	ProviderState *ProviderState `json:",omitempty"`
+	// MirrorProtocol marks human-readable projections already present in state.
+	MirrorProtocol string `json:",omitempty"`
+}
+
+type ProviderState struct {
+	Protocol string
+	Items    []json.RawMessage
 }
 
 func SystemMessage(content string) Message {
@@ -67,6 +80,13 @@ type Diagnostics struct {
 	StopReason        string
 	BlockTypes        []string
 	IgnoredBlockTypes []string
+	Usage             TokenUsage
+}
+
+type TokenUsage struct {
+	InputTokens  int
+	OutputTokens int
+	TotalTokens  int
 }
 
 type StepType string
@@ -85,12 +105,13 @@ const (
 )
 
 type Step struct {
-	Type        StepType
-	Content     string
-	Kind        ContentKind
-	Calls       []ToolCall
-	ContentKind ContentKind
-	Diagnostics Diagnostics
+	Type          StepType
+	Content       string
+	Kind          ContentKind
+	Calls         []ToolCall
+	ContentKind   ContentKind
+	Diagnostics   Diagnostics
+	ProviderState *ProviderState
 }
 
 func AssistantStep(content string, kind ContentKind, diagnostics Diagnostics) Step {
@@ -114,4 +135,10 @@ func ToolCallsStep(calls []ToolCall, content string, contentKind ContentKind, di
 
 type Model interface {
 	Next(ctx context.Context, messages []Message) (Step, error)
+}
+
+// StreamingModel delivers visible text only. The final Step is authoritative;
+// callers replace their transient preview with its parsed content.
+type StreamingModel interface {
+	NextStream(ctx context.Context, messages []Message, onTextDelta func(string)) (Step, error)
 }

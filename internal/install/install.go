@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/BigSmartie/Coding-Agent/internal/brand"
 )
 
 type BuildRequest struct {
@@ -50,10 +52,10 @@ func Install(ctx context.Context, options Options) (Result, error) {
 		pathEnv = os.Getenv("PATH")
 	}
 
-	binaryDir := filepath.Join(home, ".mini-code", "bin")
-	binaryPath := filepath.Join(binaryDir, "minicode-go")
+	binaryDir := filepath.Join(home, brand.ConfigDirName, "bin")
+	binaryPath := filepath.Join(binaryDir, brand.BinaryName)
 	launcherDir := filepath.Join(home, ".local", "bin")
-	launcherPath := filepath.Join(launcherDir, "minicode")
+	launcherPath := filepath.Join(launcherDir, brand.LauncherName)
 
 	if err := os.MkdirAll(binaryDir, 0o755); err != nil {
 		return Result{}, err
@@ -90,7 +92,7 @@ func Install(ctx context.Context, options Options) (Result, error) {
 }
 
 func defaultBuild(ctx context.Context, request BuildRequest) error {
-	cmd := exec.CommandContext(ctx, "go", "build", "-o", request.OutputPath, "./cmd/minicode")
+	cmd := exec.CommandContext(ctx, "go", "build", "-o", request.OutputPath, "./cmd/"+brand.CommandName)
 	cmd.Dir = request.RepoRoot
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

@@ -1,11 +1,8 @@
 {
-  "name": "mini-code",
-  "version": "0.1.0",
+  "name": "mycode-reference-ts",
+  "version": "0.1.0-alpha.1",
   "private": true,
   "type": "module",
-  "bin": {
-    "minicode": "./bin/minicode"
-  },
   "scripts": {
     "dev": "tsx src/index.ts",
     "check": "tsc --noEmit",

@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ssbsunshengbo/minicode-go/internal/message"
+	"github.com/BigSmartie/Coding-Agent/internal/brand"
+	"github.com/BigSmartie/Coding-Agent/internal/message"
 )
 
 type SlashCommand struct {
@@ -18,20 +19,20 @@ var SlashCommands = []SlashCommand{
 	{"/tools", "/tools", "List tools available to the coding agent and tool shortcuts."},
 	{"/status", "/status", "Show current model and config source."},
 	{"/model", "/model", "Show the current model."},
-	{"/model", "/model <model-name>", "Persist a model override into ~/.mini-code/settings.json."},
-	{"/config-paths", "/config-paths", "Show mini-code and Claude fallback settings paths."},
+	{"/model", "/model <model-name>", "Persist a model override into ~/" + brand.ConfigDirName + "/settings.json."},
+	{"/config-paths", "/config-paths", "Show " + brand.AgentName + " and Claude fallback settings paths."},
 	{"/skills", "/skills", "List discovered SKILL.md workflows."},
 	{"/mcp", "/mcp", "Show configured MCP servers and connection state."},
-	{"/permissions", "/permissions", "Show mini-code permission storage path."},
-	{"/exit", "/exit", "Exit mini-code."},
+	{"/permissions", "/permissions", "Show " + brand.AgentName + " permission storage path."},
+	{"/exit", "/exit", "Exit " + brand.AgentName + "."},
 	{"/ls", "/ls [path]", "List files in a directory."},
 	{"/grep", "/grep <pattern>::[path]", "Search text in files."},
 	{"/read", "/read <path>", "Read a file directly."},
-	{"/write", "/write <path>::<content>", "Write a file directly."},
+	{"/write", "/write <path>::<content>", "Write a workspace file after reviewing its diff."},
 	{"/modify", "/modify <path>::<content>", "Replace a file with a reviewable diff."},
 	{"/edit", "/edit <path>::<search>::<replace>", "Edit a file by exact replacement."},
 	{"/patch", "/patch <path>::<search1>::<replace1>::<search2>::<replace2>...", "Apply multiple replacements."},
-	{"/cmd", "/cmd [cwd::]<command> [args...]", "Run an allowed development command directly."},
+	{"/cmd", "/cmd [cwd::]<command> [args...]", "Run an approved command in a temporary, offline sandbox."},
 }
 
 func FormatHelp() string {

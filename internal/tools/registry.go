@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	"github.com/BigSmartie/Coding-Agent/internal/safety"
 )
 
 type Result struct {
@@ -104,6 +106,7 @@ func (r *Registry) Find(name string) (Definition, bool) {
 }
 
 func (r *Registry) Execute(ctx context.Context, toolName string, input any, toolContext Context) (result Result) {
+	defer func() { result.Output = safety.Redact(ctx, result.Output) }()
 	definition, ok := r.Find(toolName)
 	if !ok {
 		return Error("Unknown tool: " + toolName)

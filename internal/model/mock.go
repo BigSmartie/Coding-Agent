@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/ssbsunshengbo/minicode-go/internal/message"
+	"github.com/BigSmartie/Coding-Agent/internal/message"
 )
 
 type Mock struct{}

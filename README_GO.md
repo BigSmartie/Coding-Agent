@@ -1,4 +1,8 @@
-# MiniCode Go
+# MyCode Go
+
+> 历史架构教程：当前 Go 运行时的安装、凭据迁移与隔离执行方式以
+> [README](README.md)、[安全边界](SECURITY.md) 和 [P0 验收记录](P0_DEVELOPMENT.md) 为准。
+> 下文保留原 MiniCode 教程背景，旧的明文 Key、命令白名单和自动 MCP 用法已停用。
 
 MiniCode Go 是 MiniCode 终端编码助手的 Go 语言实现版本。它延续了原始 TypeScript 版本的核心产品模型，同时用更 Go-native 的方式重构了运行时、模块边界、测试体系和终端交互层。
 

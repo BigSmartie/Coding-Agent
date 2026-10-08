@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ssbsunshengbo/minicode-go/internal/config"
-	"github.com/ssbsunshengbo/minicode-go/internal/message"
-	"github.com/ssbsunshengbo/minicode-go/internal/model"
-	"github.com/ssbsunshengbo/minicode-go/internal/tools"
+	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/message"
+	"github.com/BigSmartie/Coding-Agent/internal/model"
+	"github.com/BigSmartie/Coding-Agent/internal/tools"
 )
 
 func TestRunOnceExecutesShortcut(t *testing.T) {
@@ -106,7 +106,7 @@ func TestRunOnceTurnsModelErrorIntoAssistantFailureMessage(t *testing.T) {
 	if err := s.RunOnce(context.Background(), "hello"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "请求失败: No model configured") {
+	if !strings.Contains(out.String(), "request failed: No model configured") {
 		t.Fatalf("expected request failure output, got %q", out.String())
 	}
 	loaded, err := store.Load("session-1")
@@ -114,7 +114,7 @@ func TestRunOnceTurnsModelErrorIntoAssistantFailureMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	last := loaded.Messages[len(loaded.Messages)-1]
-	if last.Role != message.RoleAssistant || !strings.Contains(last.Content, "请求失败: No model configured") {
+	if last.Role != message.RoleAssistant || !strings.Contains(last.Content, "request failed: No model configured") {
 		t.Fatalf("expected persisted failure assistant message, got %#v", loaded.Messages)
 	}
 }

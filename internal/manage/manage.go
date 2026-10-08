@@ -8,11 +8,17 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ssbsunshengbo/minicode-go/internal/config"
-	"github.com/ssbsunshengbo/minicode-go/internal/install"
-	"github.com/ssbsunshengbo/minicode-go/internal/session"
-	"github.com/ssbsunshengbo/minicode-go/internal/skills"
+	"github.com/BigSmartie/Coding-Agent/internal/brand"
+	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/credentials"
+	"github.com/BigSmartie/Coding-Agent/internal/install"
+	"github.com/BigSmartie/Coding-Agent/internal/session"
+	"github.com/BigSmartie/Coding-Agent/internal/skills"
+	"golang.org/x/term"
 )
+
+var credentialStore credentials.Store = credentials.SystemStore{}
+var readSecretInput = hiddenSecretInput
 
 func Handle(ctx context.Context, cwd string, argv []string) (string, bool, error) {
 	if len(argv) == 0 {
@@ -23,6 +29,8 @@ func Handle(ctx context.Context, cwd string, argv []string) (string, bool, error
 		return usage(), true, nil
 	case "install-local":
 		return handleInstallLocal(ctx, cwd, argv[1:])
+	case "auth":
+		return handleAuth(cwd, argv[1:])
 	case "mcp":
 		return handleMCP(ctx, cwd, argv[1:])
 	case "sessions":
@@ -66,8 +74,6 @@ type installOptions struct {
 	provider  string
 	model     string
 	baseURL   string
-	authToken string
-	apiKey    string
 	hasConfig bool
 }
 
@@ -76,6 +82,7 @@ func handleInstallLocalWithIO(ctx context.Context, cwd string, args []string, in
 	if err != nil {
 		return "", true, err
 	}
+
 	settings := config.Settings{Env: map[string]any{}}
 	if options.hasConfig {
 		settings = settingsFromInstallOptions(options)
@@ -89,9 +96,13 @@ func handleInstallLocalWithIO(ctx context.Context, cwd string, args []string, in
 	}
 	if options.hasConfig {
 		if err := config.SaveSettings(settings); err != nil {
+			for _, ref := range settings.Credentials {
+				_ = credentialStore.Delete(ref.ID)
+			}
 			return "", true, err
 		}
 	}
+
 	home, _ := os.UserHomeDir()
 	installOptions := install.Options{Home: home, RepoRoot: cwd, PathEnv: os.Getenv("PATH")}
 	if options.skipBuild {
@@ -103,8 +114,9 @@ func handleInstallLocalWithIO(ctx context.Context, cwd string, args []string, in
 	if err != nil {
 		return "", true, err
 	}
+
 	lines := []string{
-		"Installed MiniCode Go.",
+		"Installed " + brand.AppName + ".",
 		"binary: " + result.BinaryPath,
 		"launcher: " + result.LauncherPath,
 	}
@@ -147,20 +159,13 @@ func parseInstallArgs(args []string) (installOptions, error) {
 			options.baseURL = value
 			options.hasConfig = true
 		case "--auth-token":
-			value, ok := nextArg(args, &i, "--auth-token")
-			if !ok {
-				return installOptions{}, fmt.Errorf("Missing value for --auth-token")
-			}
-			options.authToken = value
-			options.hasConfig = true
+			return installOptions{}, fmt.Errorf("--auth-token is disabled because command-line arguments expose secrets; use mycode auth login or process environment")
 		case "--api-key":
-			value, ok := nextArg(args, &i, "--api-key")
-			if !ok {
-				return installOptions{}, fmt.Errorf("Missing value for --api-key")
-			}
-			options.apiKey = value
-			options.hasConfig = true
+			return installOptions{}, fmt.Errorf("--api-key is disabled because command-line arguments expose secrets; use mycode auth login or process environment")
 		default:
+			if strings.HasPrefix(args[i], "--api-key=") || strings.HasPrefix(args[i], "--auth-token=") {
+				return installOptions{}, fmt.Errorf("credential command-line arguments are disabled; use mycode auth login")
+			}
 			return installOptions{}, fmt.Errorf("Unknown install-local argument: %s", args[i])
 		}
 	}
@@ -179,68 +184,121 @@ func settingsFromInstallOptions(options installOptions) config.Settings {
 	if options.baseURL != "" {
 		settings.Env[providerEnvName(provider, "BASE_URL")] = options.baseURL
 	}
-	if options.authToken != "" {
-		settings.Env[providerEnvName(provider, "AUTH_TOKEN")] = options.authToken
-	}
-	if options.apiKey != "" {
-		settings.Env[providerEnvName(provider, "API_KEY")] = options.apiKey
-	}
 	return settings
 }
 
 func promptInstallSettings(cwd string, input io.Reader, output io.Writer) (config.Settings, error) {
 	reader := bufio.NewReader(input)
-	existing, err := config.LoadEffectiveSettings(cwd)
+	existing, err := config.LoadUserSettings()
 	if err != nil {
 		return config.Settings{}, err
 	}
 	currentEnv := existing.Env
-	fmt.Fprintln(output, "mini-code installer")
-	fmt.Fprintf(output, "配置会写入 %s\n", config.SettingsPath())
-	fmt.Fprintln(output, "配置保存在独立目录中，不会影响其它本地工具配置。")
+
+	fmt.Fprintln(output, brand.AgentName+" installer")
+	fmt.Fprintf(output, "Settings will be written to %s\n", config.SettingsPath())
+	fmt.Fprintln(output, "This uses an isolated app directory and will not modify other coding tools.")
 	fmt.Fprintln(output)
 
-	providerDefault := firstInstallValue(os.Getenv("MINI_CODE_PROVIDER"), existing.Provider, "anthropic")
+	providerDefault := firstInstallValue(os.Getenv(brand.EnvName("PROVIDER")), existing.Provider, "anthropic")
 	provider, err := askRequired(reader, output, "Provider (anthropic/openai)", providerDefault)
 	if err != nil {
 		return config.Settings{}, err
 	}
 	provider = normalizeProvider(provider)
+
 	modelDefault := firstInstallValue(existing.Model, stringify(currentEnv[providerEnvName(provider, "MODEL")]))
 	model, err := askRequired(reader, output, "Model name", modelDefault)
 	if err != nil {
 		return config.Settings{}, err
 	}
+
 	baseURLDefault := firstInstallValue(stringify(currentEnv[providerEnvName(provider, "BASE_URL")]), defaultProviderBaseURL(provider))
 	baseURL, err := askRequired(reader, output, providerEnvName(provider, "BASE_URL"), baseURLDefault)
 	if err != nil {
 		return config.Settings{}, err
 	}
+
 	secretKey := providerEnvName(provider, "AUTH_TOKEN")
 	if provider == "openai" {
 		secretKey = providerEnvName(provider, "API_KEY")
 	}
-	savedSecret := stringify(currentEnv[secretKey])
-	fmt.Fprintf(output, "%s%s: ", secretKey, secretPromptSuffix(savedSecret))
-	secret, err := readLine(reader)
+	if _, err := config.CredentialOrigin(baseURL); err != nil {
+		return config.Settings{}, err
+	}
+	fmt.Fprintf(output, "%s (hidden; stored in OS credential store): ", secretKey)
+	secret, err := readSecretInput(input, reader)
+	fmt.Fprintln(output)
 	if err != nil {
 		return config.Settings{}, err
 	}
 	secret = strings.TrimSpace(secret)
 	if secret == "" {
-		secret = savedSecret
-	}
-	if secret == "" {
-		return config.Settings{}, fmt.Errorf("%s 不能为空。", secretKey)
+		return config.Settings{}, fmt.Errorf("%s cannot be empty", secretKey)
 	}
 
 	options := installOptions{provider: provider, model: model, baseURL: baseURL, hasConfig: true}
+	kind := "auth_token"
 	if provider == "openai" {
-		options.apiKey = secret
-	} else {
-		options.authToken = secret
+		kind = "api_key"
 	}
-	return settingsFromInstallOptions(options), nil
+	ref, err := config.SaveCredential(provider, baseURL, kind, secret, credentialStore)
+	if err != nil {
+		return config.Settings{}, err
+	}
+	settings := settingsFromInstallOptions(options)
+	settings.Credentials = map[string]config.CredentialRef{provider: ref}
+	return settings, nil
+}
+
+func hiddenSecretInput(input io.Reader, reader *bufio.Reader) (string, error) {
+	file, ok := input.(*os.File)
+	if !ok || !term.IsTerminal(int(file.Fd())) {
+		return "", fmt.Errorf("credential entry requires an interactive terminal; use process environment for noninteractive BYOK")
+	}
+	if reader.Buffered() != 0 {
+		return "", fmt.Errorf("enter the credential only after the hidden prompt appears")
+	}
+	secret, err := term.ReadPassword(int(file.Fd()))
+	defer func() {
+		for i := range secret {
+			secret[i] = 0
+		}
+	}()
+	return string(secret), err
+}
+
+func handleAuth(cwd string, args []string) (string, bool, error) {
+	if len(args) == 2 && args[0] == "migrate" && args[1] == "--from-project" {
+		if err := config.MigrateProjectCredentials(cwd, credentialStore); err != nil {
+			return "", true, err
+		}
+		return "Project provider credentials migrated to the OS store and user settings; plaintext provider fields removed from project settings.", true, nil
+	}
+	if len(args) != 1 {
+		return "", true, fmt.Errorf("use mycode auth login or mycode auth migrate [--from-project]")
+	}
+	switch args[0] {
+	case "login":
+		settings, err := promptInstallSettings(cwd, os.Stdin, os.Stdout)
+		if err != nil {
+			return "", true, err
+		}
+		if err := config.SaveSettings(settings); err != nil {
+			for _, ref := range settings.Credentials {
+				_ = credentialStore.Delete(ref.ID)
+			}
+			return "", true, err
+		}
+		return "Credential saved in the operating system store; settings contain only its reference and HTTPS origin.", true, nil
+	case "migrate":
+		if err := config.MigrateCredentials(credentialStore); err != nil {
+			return "", true, err
+		}
+		return "User settings credentials migrated to the operating system store. Project and other application files were not modified.", true, nil
+	default:
+		return "", true, fmt.Errorf("use mycode auth login or mycode auth migrate")
+	}
 }
 
 func nextArg(args []string, index *int, flag string) (string, bool) {
@@ -292,7 +350,7 @@ func askRequired(reader *bufio.Reader, output io.Writer, label, defaultValue str
 		if value != "" {
 			return value, nil
 		}
-		fmt.Fprintln(output, "该项不能为空，请重新输入。")
+		fmt.Fprintln(output, "This value cannot be empty. Please try again.")
 	}
 }
 
@@ -335,8 +393,7 @@ func stringify(value any) string {
 }
 
 func isTerminal(file *os.File) bool {
-	info, err := file.Stat()
-	return err == nil && (info.Mode()&os.ModeCharDevice) != 0
+	return term.IsTerminal(int(file.Fd()))
 }
 
 func handleSkills(ctx context.Context, cwd string, args []string) (string, bool, error) {
@@ -344,6 +401,9 @@ func handleSkills(ctx context.Context, cwd string, args []string) (string, bool,
 		return usage(), true, nil
 	}
 	scope, rest := parseScope(args)
+	if len(rest) == 0 {
+		return usage(), true, nil
+	}
 	home, _ := os.UserHomeDir()
 	store := skills.NewStore(cwd, home)
 	switch rest[0] {
@@ -393,6 +453,9 @@ func handleMCP(_ context.Context, cwd string, args []string) (string, bool, erro
 		return usage(), true, nil
 	}
 	scope, rest := parseScope(args)
+	if len(rest) == 0 {
+		return usage(), true, nil
+	}
 	path := config.MCPPath()
 	if scope == "project" {
 		path = config.ProjectMCPPath(cwd)
@@ -450,7 +513,7 @@ func handleMCP(_ context.Context, cwd string, args []string) (string, bool, erro
 				}
 				key, value, ok := strings.Cut(head[i+1], "=")
 				if !ok || strings.TrimSpace(key) == "" {
-					return "", true, fmt.Errorf("Invalid --env value: %s", head[i+1])
+					return "", true, fmt.Errorf("Invalid --env value; expected NAME=VALUE")
 				}
 				env[strings.TrimSpace(key)] = value
 				i++
@@ -488,16 +551,18 @@ func parseScope(args []string) (string, []string) {
 }
 
 func usage() string {
-	return `minicode management commands
+	return brand.CommandName + ` management commands
 
-minicode install-local
-minicode sessions list
+` + brand.CommandName + ` install-local
+` + brand.CommandName + ` auth login
+` + brand.CommandName + ` auth migrate [--from-project]
+` + brand.CommandName + ` sessions list
 
-minicode mcp list [--project]
-minicode mcp add <name> [--project] -- <command> [args...]
-minicode mcp remove <name> [--project]
+` + brand.CommandName + ` mcp list [--project]
+` + brand.CommandName + ` mcp add <name> [--project] -- <command> [args...]
+` + brand.CommandName + ` mcp remove <name> [--project]
 
-minicode skills list
-minicode skills add <path-to-skill-or-dir> [--name <name>] [--project]
-minicode skills remove <name> [--project]`
+` + brand.CommandName + ` skills list
+` + brand.CommandName + ` skills add <path-to-skill-or-dir> [--name <name>] [--project]
+` + brand.CommandName + ` skills remove <name> [--project]`
 }

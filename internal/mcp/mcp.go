@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -16,9 +15,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ssbsunshengbo/minicode-go/internal/config"
-	"github.com/ssbsunshengbo/minicode-go/internal/tools"
+	"github.com/BigSmartie/Coding-Agent/internal/brand"
+	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/safety"
+	"github.com/BigSmartie/Coding-Agent/internal/sandbox"
+	"github.com/BigSmartie/Coding-Agent/internal/tools"
 )
+
+const maxMessageBytes = 4 << 20
+const maxHeaderBytes = 8 << 10
+
+type Options struct {
+	Authorize func(string, config.MCPServerConfig) bool
+	// Prepare defaults to the isolated sandbox. Injection supports protocol tests.
+	Prepare func(context.Context, sandbox.Options) (*exec.Cmd, func(), error)
+}
 
 type Result struct {
 	Tools   []tools.Definition
@@ -74,12 +85,23 @@ type stdioClient struct {
 	reader      *bufio.Reader
 	nextID      int
 	mu          sync.Mutex
+	lifecycleMu sync.Mutex
+	writeMu     sync.Mutex
+	generation  int
+	readErr     error
+	prepare     func(context.Context, sandbox.Options) (*exec.Cmd, func(), error)
+	cleanup     func()
+	cancel      context.CancelFunc
 	pending     map[int]chan rpcResponse
 	stderrMu    sync.Mutex
 	stderrLines []string
 }
 
-func CreateBackedTools(ctx context.Context, cwd string, servers map[string]config.MCPServerConfig) Result {
+func CreateBackedTools(ctx context.Context, cwd string, servers map[string]config.MCPServerConfig, options ...Options) Result {
+	var opts Options
+	if len(options) > 0 {
+		opts = options[0]
+	}
 	clients := []*stdioClient{}
 	definitions := []tools.Definition{}
 	summaries := []tools.MCPServerSummary{}
@@ -98,7 +120,11 @@ func CreateBackedTools(ctx context.Context, cwd string, servers map[string]confi
 			continue
 		}
 
-		client := &stdioClient{serverName: serverName, config: serverConfig, cwd: cwd}
+		if opts.Authorize == nil || !opts.Authorize(serverName, serverConfig) {
+			summaries = append(summaries, tools.MCPServerSummary{Name: serverName, Command: serverConfig.Command, Status: "untrusted", Error: "Review with mycode trust mcp <server> before enabling this configuration."})
+			continue
+		}
+		client := &stdioClient{serverName: serverName, config: serverConfig, cwd: cwd, prepare: opts.Prepare}
 		if err := client.start(ctx); err != nil {
 			_ = client.close()
 			summaries = append(summaries, tools.MCPServerSummary{
@@ -111,11 +137,11 @@ func CreateBackedTools(ctx context.Context, cwd string, servers map[string]confi
 			})
 			continue
 		}
-		clients = append(clients, client)
-
 		descriptors, err := client.listTools(ctx)
 		if err != nil {
-			descriptors = nil
+			_ = client.close()
+			summaries = append(summaries, tools.MCPServerSummary{Name: serverName, Command: serverConfig.Command, Status: "error", Error: safety.Redact(ctx, err.Error()), Protocol: client.protocol})
+			continue
 		}
 		resources, err := client.listResources(ctx)
 		if err != nil {
@@ -125,6 +151,17 @@ func CreateBackedTools(ctx context.Context, cwd string, servers map[string]confi
 		if err != nil {
 			prompts = nil
 		}
+		// Optional methods may be unsupported while the connection stays healthy.
+		// A timeout or transport failure instead invalidates every discovered tool.
+		client.mu.Lock()
+		connectionErr := client.readErr
+		client.mu.Unlock()
+		if connectionErr != nil {
+			_ = client.close()
+			summaries = append(summaries, tools.MCPServerSummary{Name: serverName, Command: serverConfig.Command, Status: "error", Error: safety.Redact(ctx, connectionErr.Error()), Protocol: client.protocol})
+			continue
+		}
+		clients = append(clients, client)
 
 		for _, resource := range resources {
 			resourceIndex[serverName+":"+resource.URI] = resourceEntry{serverName: serverName, resource: resource, client: client}
@@ -141,9 +178,12 @@ func CreateBackedTools(ctx context.Context, cwd string, servers map[string]confi
 			}
 			definitions = append(definitions, tools.Definition{
 				Name:        wrappedName,
-				Description: description,
+				Description: description + " " + sandbox.SnapshotNotice,
 				InputSchema: normalizeInputSchema(descriptor.InputSchema),
-				Run: func(ctx context.Context, raw json.RawMessage, _ tools.Context) tools.Result {
+				Run: func(ctx context.Context, raw json.RawMessage, toolCtx tools.Context) tools.Result {
+					if err := authorizeCall(ctx, toolCtx, serverName, descriptor.Name, raw); err != nil {
+						return tools.Error(err.Error())
+					}
 					var input any = map[string]any{}
 					if len(raw) > 0 {
 						_ = json.Unmarshal(raw, &input)
@@ -188,15 +228,16 @@ func (c *stdioClient) start(ctx context.Context) error {
 	}
 	var lastErr error
 	for _, protocol := range protocolCandidates(c.config.Protocol) {
-		if err := c.spawn(protocol); err != nil {
+		if err := c.spawn(ctx, protocol); err != nil {
 			lastErr = err
+			_ = c.close()
 			continue
 		}
 		requestCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		_, err := c.request(requestCtx, "initialize", map[string]any{
 			"protocolVersion": "2024-11-05",
 			"capabilities":    map[string]any{},
-			"clientInfo":      map[string]any{"name": "mini-code", "version": "0.1.0"},
+			"clientInfo":      map[string]any{"name": brand.AgentName, "version": brand.Version},
 		})
 		cancel()
 		if err == nil {
@@ -209,17 +250,28 @@ func (c *stdioClient) start(ctx context.Context) error {
 	return lastErr
 }
 
-func (c *stdioClient) spawn(protocol string) error {
+func (c *stdioClient) spawn(ctx context.Context, protocol string) error {
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
 	commandCWD := c.cwd
 	if c.config.CWD != "" {
 		commandCWD = filepath.Join(c.cwd, c.config.CWD)
 	}
-	cmd := exec.Command(c.config.Command, c.config.Args...)
-	cmd.Dir = commandCWD
-	cmd.Env = os.Environ()
+	env := map[string]string{}
 	for key, value := range c.config.Env {
-		cmd.Env = append(cmd.Env, key+"="+fmt.Sprint(value))
+		env[key] = fmt.Sprint(value)
 	}
+	prepare := c.prepare
+	if prepare == nil {
+		prepare = sandbox.Prepare
+	}
+	lifeCtx, cancel := context.WithCancel(ctx)
+	cmd, cleanup, err := prepare(lifeCtx, sandbox.Options{Workspace: c.cwd, CWD: commandCWD, Command: c.config.Command, Args: c.config.Args, Env: env})
+	if err != nil {
+		cancel()
+		return err
+	}
+	c.cancel, c.cleanup, c.cmd = cancel, cleanup, cmd
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -235,15 +287,21 @@ func (c *stdioClient) spawn(protocol string) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	c.cmd = cmd
 	c.stdin = stdin
 	c.reader = bufio.NewReader(stdout)
 	c.protocol = protocol
+	c.mu.Lock()
 	c.nextID = 1
 	c.pending = map[int]chan rpcResponse{}
+	c.readErr = nil
+	c.generation++
+	generation := c.generation
+	c.mu.Unlock()
+	c.stderrMu.Lock()
 	c.stderrLines = nil
+	c.stderrMu.Unlock()
 	go c.captureStderr(stderr)
-	go c.readLoop()
+	go c.readLoop(c.reader, protocol, generation)
 	return nil
 }
 
@@ -314,23 +372,39 @@ func (c *stdioClient) requestInto(ctx context.Context, method string, params any
 }
 
 func (c *stdioClient) request(ctx context.Context, method string, params any) (any, error) {
+	timeout := 30 * time.Second
+	if strings.HasSuffix(method, "/list") {
+		timeout = 3 * time.Second
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ctx = requestCtx
 	c.mu.Lock()
+	if c.readErr != nil {
+		err := c.readErr
+		c.mu.Unlock()
+		return nil, err
+	}
 	id := c.nextID
 	c.nextID++
 	ch := make(chan rpcResponse, 1)
 	c.pending[id] = ch
-	if err := c.send(jsonRPCMessage{JSONRPC: "2.0", ID: id, Method: method, Params: params}); err != nil {
+	c.mu.Unlock()
+	if err := c.sendContext(ctx, jsonRPCMessage{JSONRPC: "2.0", ID: id, Method: method, Params: params}); err != nil {
+		c.mu.Lock()
 		delete(c.pending, id)
 		c.mu.Unlock()
 		return nil, err
 	}
-	c.mu.Unlock()
 	select {
 	case <-ctx.Done():
 		c.mu.Lock()
 		delete(c.pending, id)
 		c.mu.Unlock()
-		return nil, fmt.Errorf("MCP %s: request timed out for %s%s", c.serverName, method, c.stderrSuffix())
+		// The server may ignore cancellation notifications. Stop its isolated
+		// process so a timed-out tool cannot keep executing after this returns.
+		_ = c.close()
+		return nil, fmt.Errorf("MCP %s: request timed out or cancelled for %s: %w", c.serverName, method, ctx.Err())
 	case result := <-ch:
 		if result.err != nil {
 			return nil, result.err
@@ -349,44 +423,69 @@ func (c *stdioClient) request(ctx context.Context, method string, params any) (a
 }
 
 func (c *stdioClient) notify(method string, params any) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.send(jsonRPCMessage{JSONRPC: "2.0", Method: method, Params: params})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	return c.sendContext(ctx, jsonRPCMessage{JSONRPC: "2.0", Method: method, Params: params})
 }
 
-func (c *stdioClient) send(msg jsonRPCMessage) error {
+func (c *stdioClient) sendContext(ctx context.Context, msg jsonRPCMessage) error {
+	c.lifecycleMu.Lock()
+	stdin, protocol := c.stdin, c.protocol
+	c.lifecycleMu.Unlock()
+	done := make(chan error, 1)
+	go func() { done <- c.send(stdin, protocol, msg) }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		// close interrupts writers and pending readers and runs sandbox cleanup.
+		_ = c.close()
+		return ctx.Err()
+	}
+}
+
+func (c *stdioClient) send(stdin io.WriteCloser, protocol string, msg jsonRPCMessage) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	body, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
-	if c.protocol == "newline-json" {
-		_, err = fmt.Fprintln(c.stdin, string(body))
+	if len(body) > maxMessageBytes {
+		return fmt.Errorf("MCP request exceeds message size limit")
+	}
+	if stdin == nil {
+		return fmt.Errorf("MCP stdin is closed")
+	}
+	if protocol == "newline-json" {
+		_, err = fmt.Fprintln(stdin, string(body))
 		return err
 	}
-	_, err = fmt.Fprintf(c.stdin, "Content-Length: %d\r\n\r\n%s", len(body), body)
+	_, err = fmt.Fprintf(stdin, "Content-Length: %d\r\n\r\n%s", len(body), body)
 	return err
 }
 
-func (c *stdioClient) readMessage() (jsonRPCMessage, error) {
+func readMessage(reader *bufio.Reader, protocol string) (jsonRPCMessage, error) {
 	var data []byte
 	var err error
-	if c.protocol == "newline-json" {
-		data, err = c.reader.ReadBytes('\n')
+	if protocol == "newline-json" {
+		data, err = readBoundedLine(reader, maxMessageBytes)
 	} else {
-		data, err = readContentLengthMessage(c.reader)
+		data, err = readContentLengthMessage(reader)
 	}
 	if err != nil {
 		return jsonRPCMessage{}, err
 	}
 	var msg jsonRPCMessage
-	return msg, json.Unmarshal(bytes.TrimSpace(data), &msg)
+	err = json.Unmarshal(bytes.TrimSpace(data), &msg)
+	return msg, err
 }
 
-func (c *stdioClient) readLoop() {
+func (c *stdioClient) readLoop(reader *bufio.Reader, protocol string, generation int) {
 	for {
-		msg, err := c.readMessage()
+		msg, err := readMessage(reader, protocol)
 		if err != nil {
-			c.failPending(err)
+			c.failGeneration(generation, err)
 			return
 		}
 		id, ok := messageID(msg.ID)
@@ -394,6 +493,10 @@ func (c *stdioClient) readLoop() {
 			continue
 		}
 		c.mu.Lock()
+		if c.generation != generation {
+			c.mu.Unlock()
+			return
+		}
 		ch := c.pending[id]
 		delete(c.pending, id)
 		c.mu.Unlock()
@@ -404,7 +507,16 @@ func (c *stdioClient) readLoop() {
 }
 
 func (c *stdioClient) failPending(err error) {
+	c.failGeneration(0, err)
+}
+
+func (c *stdioClient) failGeneration(generation int, err error) {
 	c.mu.Lock()
+	if generation != 0 && generation != c.generation {
+		c.mu.Unlock()
+		return
+	}
+	c.readErr = err
 	pending := c.pending
 	c.pending = map[int]chan rpcResponse{}
 	c.mu.Unlock()
@@ -427,6 +539,11 @@ func (c *stdioClient) captureStderr(stderr io.Reader) {
 		}
 		c.stderrMu.Unlock()
 	}
+	// Scanner stops on an oversized line. Continue draining rather than leave
+	// the server blocked on a full stderr pipe while it owes an RPC response.
+	if scanner.Err() != nil {
+		_, _ = io.Copy(io.Discard, stderr)
+	}
 }
 
 func (c *stdioClient) stderrSuffix() string {
@@ -439,12 +556,23 @@ func (c *stdioClient) stderrSuffix() string {
 }
 
 func (c *stdioClient) close() error {
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
+	if c.cancel != nil {
+		c.cancel()
+		c.cancel = nil
+	}
 	if c.stdin != nil {
 		_ = c.stdin.Close()
+		c.stdin = nil
 	}
 	if c.cmd != nil && c.cmd.Process != nil {
 		_ = c.cmd.Process.Kill()
-		_, _ = c.cmd.Process.Wait()
+		_ = c.cmd.Wait()
+	}
+	if c.cleanup != nil {
+		c.cleanup()
+		c.cleanup = nil
 	}
 	c.cmd = nil
 	c.failPending(fmt.Errorf("MCP server %q is not running", c.serverName))
@@ -455,7 +583,10 @@ func readContentLengthMessage(reader io.Reader) ([]byte, error) {
 	header := []byte{}
 	buf := make([]byte, 1)
 	for !bytes.Contains(header, []byte("\r\n\r\n")) {
-		if _, err := reader.Read(buf); err != nil {
+		if len(header) >= maxHeaderBytes {
+			return nil, fmt.Errorf("MCP header exceeds size limit")
+		}
+		if _, err := io.ReadFull(reader, buf); err != nil {
 			return nil, err
 		}
 		header = append(header, buf[0])
@@ -468,8 +599,8 @@ func readContentLengthMessage(reader io.Reader) ([]byte, error) {
 			break
 		}
 	}
-	if contentLength <= 0 {
-		return nil, fmt.Errorf("missing Content-Length header")
+	if contentLength <= 0 || contentLength > maxMessageBytes {
+		return nil, fmt.Errorf("missing or invalid Content-Length header (limit %d)", maxMessageBytes)
 	}
 	body := make([]byte, contentLength)
 	_, err := io.ReadFull(reader, body)
@@ -526,7 +657,7 @@ func resourceTools(index map[string]resourceEntry) []tools.Definition {
 			Name:        "read_mcp_resource",
 			Description: "Read a resource exposed by a connected MCP server.",
 			InputSchema: objectSchema(map[string]any{"server": map[string]any{"type": "string"}, "uri": map[string]any{"type": "string"}}, []string{"uri"}),
-			Run: func(ctx context.Context, raw json.RawMessage, _ tools.Context) tools.Result {
+			Run: func(ctx context.Context, raw json.RawMessage, toolCtx tools.Context) tools.Result {
 				var input struct {
 					Server string `json:"server"`
 					URI    string `json:"uri"`
@@ -537,6 +668,9 @@ func resourceTools(index map[string]resourceEntry) []tools.Definition {
 				entry, ok := findResource(index, input.Server, input.URI)
 				if !ok {
 					return tools.Error("Unknown MCP resource: " + input.URI)
+				}
+				if err := authorizeCall(ctx, toolCtx, entry.serverName, "resources/read", raw); err != nil {
+					return tools.Error(err.Error())
 				}
 				return entry.client.readResource(ctx, entry.resource.URI)
 			},
@@ -579,7 +713,7 @@ func promptTools(index map[string]promptEntry) []tools.Definition {
 			Name:        "get_mcp_prompt",
 			Description: "Get a prompt exposed by a connected MCP server.",
 			InputSchema: objectSchema(map[string]any{"server": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "arguments": map[string]any{"type": "object"}}, []string{"name"}),
-			Run: func(ctx context.Context, raw json.RawMessage, _ tools.Context) tools.Result {
+			Run: func(ctx context.Context, raw json.RawMessage, toolCtx tools.Context) tools.Result {
 				var input struct {
 					Server    string            `json:"server"`
 					Name      string            `json:"name"`
@@ -591,6 +725,9 @@ func promptTools(index map[string]promptEntry) []tools.Definition {
 				entry, ok := findPrompt(index, input.Server, input.Name)
 				if !ok {
 					return tools.Error("Unknown MCP prompt: " + input.Name)
+				}
+				if err := authorizeCall(ctx, toolCtx, entry.serverName, "prompts/get", raw); err != nil {
+					return tools.Error(err.Error())
 				}
 				return entry.client.getPrompt(ctx, entry.prompt.Name, input.Arguments)
 			},
@@ -797,4 +934,26 @@ func mustPretty(value any) string {
 		return fmt.Sprint(value)
 	}
 	return string(data)
+}
+
+func authorizeCall(ctx context.Context, toolCtx tools.Context, server, method string, raw json.RawMessage) error {
+	if toolCtx.Permission == nil {
+		return fmt.Errorf("MCP call requires an active permission manager")
+	}
+	return toolCtx.Permission.EnsureCommand(ctx, "mcp:"+server+":"+method, []string{safety.Redact(ctx, string(raw))}, toolCtx.CWD)
+}
+
+func readBoundedLine(reader *bufio.Reader, limit int) ([]byte, error) {
+	var data []byte
+	for {
+		part, err := reader.ReadSlice('\n')
+		if len(data)+len(part) > limit {
+			return nil, fmt.Errorf("MCP line exceeds message size limit")
+		}
+		data = append(data, part...)
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		return data, err
+	}
 }

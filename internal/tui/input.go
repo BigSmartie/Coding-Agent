@@ -3,6 +3,7 @@ package tui
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 const esc = "\x1b"
@@ -36,22 +37,26 @@ func ParseInputChunk(previousRest string, chunk string) ParseResult {
 				continue
 			}
 		}
-		ch := input[index]
+		if !utf8.FullRuneInString(input[index:]) {
+			return ParseResult{Events: events, Rest: input[index:]}
+		}
+		r, size := utf8.DecodeRuneInString(input[index:])
+		ch := byte(r)
 		switch {
-		case ch == '\r' || ch == '\n':
+		case r == '\r' || r == '\n':
 			events = append(events, InputEvent{Kind: EventKey, Name: KeyReturn})
-		case ch == '\t':
+		case r == '\t':
 			events = append(events, InputEvent{Kind: EventKey, Name: KeyTab})
-		case ch == '\x7f' || ch == '\b':
+		case r == '\x7f' || r == '\b':
 			events = append(events, InputEvent{Kind: EventKey, Name: KeyBackspace})
 		case ch >= '\x01' && ch <= '\x1a':
 			if name, ok := ctrlMap[ch]; ok {
 				events = append(events, InputEvent{Kind: EventText, Text: name, Ctrl: true})
 			}
-		case ch >= ' ':
-			events = append(events, InputEvent{Kind: EventText, Text: string(ch)})
+		case r >= ' ':
+			events = append(events, InputEvent{Kind: EventText, Text: string(r)})
 		}
-		index++
+		index += size
 	}
 	return ParseResult{Events: events}
 }

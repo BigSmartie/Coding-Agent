@@ -1,17 +1,21 @@
 package mcp
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/ssbsunshengbo/minicode-go/internal/config"
-	"github.com/ssbsunshengbo/minicode-go/internal/tools"
+	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/sandbox"
+	"github.com/BigSmartie/Coding-Agent/internal/tools"
 )
 
 func TestSanitizeToolSegment(t *testing.T) {
@@ -33,14 +37,17 @@ func TestCreateBackedToolsWrapsNewlineJSONServer(t *testing.T) {
 			Env:      map[string]any{"GO_WANT_MCP_HELPER": "1", "MCP_TEST_PROTOCOL": "newline-json"},
 			Protocol: "newline-json",
 		},
-	})
+	}, protocolTestOptions())
 	defer result.Dispose(context.Background())
 
 	if len(result.Servers) != 1 || result.Servers[0].Status != "connected" || result.Servers[0].ToolCount != 1 {
 		t.Fatalf("unexpected server summary: %#v", result.Servers)
 	}
 	registry := tools.NewRegistry(result.Tools, tools.Metadata{})
-	toolResult := registry.Execute(context.Background(), "mcp__fake__hello", map[string]any{"name": "Ada"}, tools.Context{})
+	if got := registry.Execute(context.Background(), "mcp__fake__hello", map[string]any{"name": "Ada"}, tools.Context{}); got.OK {
+		t.Fatal("MCP call allowed without permission manager")
+	}
+	toolResult := registry.Execute(context.Background(), "mcp__fake__hello", map[string]any{"name": "Ada"}, tools.Context{Permission: testPermission{}})
 	if !toolResult.OK || !strings.Contains(toolResult.Output, "Hello Ada") {
 		t.Fatalf("unexpected tool result: %#v", toolResult)
 	}
@@ -64,7 +71,7 @@ func TestCreateBackedToolsWrapsContentLengthServer(t *testing.T) {
 			Env:      map[string]any{"GO_WANT_MCP_HELPER": "1", "MCP_TEST_PROTOCOL": "content-length"},
 			Protocol: "content-length",
 		},
-	})
+	}, protocolTestOptions())
 	defer result.Dispose(context.Background())
 
 	if len(result.Servers) != 1 || result.Servers[0].Protocol != "content-length" || result.Servers[0].Status != "connected" {
@@ -72,18 +79,19 @@ func TestCreateBackedToolsWrapsContentLengthServer(t *testing.T) {
 	}
 }
 
-func TestClientRecoversAfterTimedOutRequest(t *testing.T) {
+func TestClientFailsClosedAfterTimedOutRequest(t *testing.T) {
 	if os.Getenv("GO_WANT_MCP_HELPER") == "1" {
 		runFakeMCPServer()
 		return
 	}
 
 	client := &stdioClient{
+		prepare:    protocolTestPrepare,
 		serverName: "fake",
 		cwd:        t.TempDir(),
 		config: config.MCPServerConfig{
 			Command:  os.Args[0],
-			Args:     []string{"-test.run=TestClientRecoversAfterTimedOutRequest"},
+			Args:     []string{"-test.run=TestClientFailsClosedAfterTimedOutRequest"},
 			Env:      map[string]any{"GO_WANT_MCP_HELPER": "1", "MCP_TEST_PROTOCOL": "newline-json"},
 			Protocol: "newline-json",
 		},
@@ -102,12 +110,63 @@ func TestClientRecoversAfterTimedOutRequest(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+	if _, err := client.listTools(ctx); err == nil {
+		t.Fatal("timed-out server remained usable")
+	}
+	if client.cmd != nil || client.cleanup != nil {
+		t.Fatal("timed-out server was not cleaned up")
+	}
+	if err := client.start(context.Background()); err != nil {
+		t.Fatalf("explicit restart failed: %v", err)
+	}
 	descriptors, err := client.listTools(ctx)
 	if err != nil {
-		t.Fatalf("client did not recover after timeout: %v", err)
+		t.Fatal(err)
 	}
 	if len(descriptors) != 1 || descriptors[0].Name != "hello" {
 		t.Fatalf("unexpected tools after timeout: %#v", descriptors)
+	}
+}
+
+func protocolTestOptions() Options {
+	return Options{Authorize: func(string, config.MCPServerConfig) bool { return true }, Prepare: protocolTestPrepare}
+}
+
+func protocolTestPrepare(ctx context.Context, options sandbox.Options) (*exec.Cmd, func(), error) {
+	cmd := exec.CommandContext(ctx, options.Command, options.Args...)
+	cmd.Dir = options.CWD
+	cmd.Env = sandbox.HostEnvironment()
+	for key, value := range options.Env {
+		cmd.Env = append(cmd.Env, key+"="+value)
+	}
+	return cmd, func() {}, nil
+}
+
+type testPermission struct{}
+
+func (testPermission) EnsurePathAccess(context.Context, string, string) error        { return nil }
+func (testPermission) EnsureCommand(context.Context, string, []string, string) error { return nil }
+func (testPermission) EnsureEdit(context.Context, string, string) error              { return nil }
+
+func TestUntrustedServerNeverStarts(t *testing.T) {
+	called := false
+	result := CreateBackedTools(context.Background(), t.TempDir(), map[string]config.MCPServerConfig{"untrusted": {Command: "must-not-run"}}, Options{Prepare: func(context.Context, sandbox.Options) (*exec.Cmd, func(), error) {
+		called = true
+		return nil, nil, fmt.Errorf("must not be called")
+	}})
+	if called || len(result.Servers) != 1 || result.Servers[0].Status != "untrusted" {
+		t.Fatal("untrusted process started")
+	}
+}
+
+func TestMCPFramesAreBounded(t *testing.T) {
+	for _, header := range []string{"Content-Length: 999999999\r\n\r\n", "Content-Length: -1\r\n\r\n", strings.Repeat("A", maxHeaderBytes+1)} {
+		if _, err := readContentLengthMessage(strings.NewReader(header)); err == nil {
+			t.Fatal("unsafe frame accepted")
+		}
+	}
+	if _, err := readBoundedLine(bufio.NewReader(bytes.NewReader(bytes.Repeat([]byte{'x'}, maxMessageBytes+1))), maxMessageBytes); err == nil {
+		t.Fatal("oversized newline message accepted")
 	}
 }
 
@@ -123,6 +182,16 @@ func runFakeMCPServer() {
 		id, hasID := msg["id"]
 		if !hasID {
 			continue
+		}
+		if method == os.Getenv("MCP_TEST_OPTIONAL_METHOD") {
+			switch os.Getenv("MCP_TEST_OPTIONAL_RESULT") {
+			case "timeout":
+				time.Sleep(30 * time.Second)
+				continue
+			case "unsupported":
+				writeProtocolMessage(os.Stdout, protocol, map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32601, "message": "Method not found"}})
+				continue
+			}
 		}
 		var result any
 		switch method {

@@ -33,7 +33,9 @@ Claude Code does not treat the session as plain chat text. It distinguishes betw
 
 ### What MiniCode makes visible
 
-MiniCode also moved away from a plain transcript model. It now distinguishes between normal assistant output, progress, tool calls, tool results, and compacted context summaries.
+MiniCode also moved away from a plain transcript model. It currently distinguishes
+normal assistant output, progress, tool calls, tool results, and opaque provider
+continuation state. Durable compaction events are a P1 target.
 
 ## 3. Tool Use as a Protocol
 
@@ -95,7 +97,7 @@ Claude Code skills act more like lightweight workflow extensions:
 
 MiniCode applies the same idea in a smaller form. Local `SKILL.md` files can be discovered and loaded into the execution flow, allowing the model to adopt a more specific workflow.
 
-## 8. Automatic Context Compaction
+## 8. Context Compaction (P1 target)
 
 ### Claude Code design
 
@@ -103,7 +105,9 @@ Claude Code does not treat long-context management as simple deletion. Older con
 
 ### What MiniCode makes visible
 
-MiniCode follows the same direction. When conversation state becomes too large, earlier messages can be summarized into a `context_summary`, and the recent tail is preserved.
+MiniCode does not yet compact long conversations. P1 will add a durable event
+journal and context budgeting first, then derive a summary plus a recent complete
+turn tail without splitting tool-call/result groups or corrupting provider state.
 
 ## 9. TUI as a State-Machine View
 
@@ -136,7 +140,7 @@ MiniCode keeps the structural ideas rather than the full production footprint. W
 - permission-aware execution
 - MCP as dynamic extension
 - skills as workflow extension
-- automatic context compaction
+- resumable session snapshots; durable context compaction remains a P1 target
 - state-oriented terminal UI
 
 MiniCode is better understood as a small Claude Code-style reference implementation rather than as a full clone.

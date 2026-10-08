@@ -33,3 +33,13 @@ func TestParseInputChunkParsesCtrlKeys(t *testing.T) {
 		t.Fatalf("unexpected ctrl event: %#v", result.Events)
 	}
 }
+
+func TestParseInputChunkParsesUTF8Text(t *testing.T) {
+	result := ParseInputChunk("", "\u4f60\u597d")
+	if len(result.Events) != 2 {
+		t.Fatalf("unexpected events: %#v", result.Events)
+	}
+	if result.Events[0].Text != "\u4f60" || result.Events[1].Text != "\u597d" {
+		t.Fatalf("unexpected utf8 events: %#v", result.Events)
+	}
+}

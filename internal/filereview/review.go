@@ -1,11 +1,14 @@
 package filereview
 
 import (
+	"bytes"
 	"context"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/BigSmartie/Coding-Agent/internal/safety"
+	"github.com/BigSmartie/Coding-Agent/internal/workspace"
 )
 
 type Permission interface {
@@ -18,6 +21,7 @@ type Result struct {
 }
 
 func BuildUnifiedDiff(filePath, before, after string) string {
+	filePath = safety.EscapeInline(filePath)
 	if before == after {
 		return "(no changes for " + filePath + ")"
 	}
@@ -48,6 +52,17 @@ type diffOp struct {
 }
 
 func diffOps(beforeLines, afterLines []string) []diffOp {
+	// Bound LCS memory for generated files and adversarial newline-heavy input.
+	if int64(len(beforeLines)+1)*int64(len(afterLines)+1) > 1_000_000 {
+		ops := make([]diffOp, 0, len(beforeLines)+len(afterLines))
+		for i, line := range beforeLines {
+			ops = append(ops, diffOp{kind: "-", line: line, oldLine: i + 1, newLine: 1})
+		}
+		for i, line := range afterLines {
+			ops = append(ops, diffOp{kind: "+", line: line, oldLine: len(beforeLines) + 1, newLine: i + 1})
+		}
+		return ops
+	}
 	lcs := make([][]int, len(beforeLines)+1)
 	for i := range lcs {
 		lcs[i] = make([]int, len(afterLines)+1)
@@ -143,29 +158,42 @@ func hunkRangeForOps(ops []diffOp) (int, int, int, int) {
 	return oldStart, oldCount, newStart, newCount
 }
 
-func ApplyReviewedChange(ctx context.Context, permission Permission, filePath, targetPath, nextContent string) Result {
-	previousContent := ""
-	if bytes, err := os.ReadFile(targetPath); err == nil {
-		previousContent = string(bytes)
-	} else if !os.IsNotExist(err) {
-		return Result{OK: false, Output: err.Error()}
+func ApplyReviewedChange(ctx context.Context, permission Permission, cwd, filePath, targetPath, nextContent string) Result {
+	fail := func(err error) Result { return Result{Output: err.Error()} }
+	if len(nextContent) > workspace.MaxFileBytes {
+		return Result{Output: "edit exceeds 2 MiB limit"}
 	}
-
-	if previousContent == nextContent {
+	access, err := workspace.Open(cwd)
+	if err != nil {
+		return fail(err)
+	}
+	defer access.Close()
+	previous, err := access.ReadFile(targetPath, workspace.MaxFileBytes)
+	exists := err == nil
+	if err != nil && !os.IsNotExist(err) {
+		return fail(err)
+	}
+	if string(previous) == nextContent {
 		return Result{OK: true, Output: "No changes needed for " + filePath}
 	}
-
-	diff := BuildUnifiedDiff(filePath, previousContent, nextContent)
-	if permission != nil {
-		if err := permission.EnsureEdit(ctx, targetPath, diff); err != nil {
-			return Result{OK: false, Output: err.Error()}
-		}
+	if permission == nil {
+		return Result{Output: "Edit requires explicit approval; no permission manager is available"}
 	}
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
-		return Result{OK: false, Output: err.Error()}
+	if err := permission.EnsureEdit(ctx, targetPath, BuildUnifiedDiff(filePath, string(previous), nextContent)); err != nil {
+		return fail(err)
 	}
-	if err := os.WriteFile(targetPath, []byte(nextContent), 0o644); err != nil {
-		return Result{OK: false, Output: err.Error()}
+	if err := ctx.Err(); err != nil {
+		return fail(err)
+	}
+	current, err := access.ReadFile(targetPath, workspace.MaxFileBytes)
+	if exists && (err != nil || !bytes.Equal(previous, current)) {
+		return Result{Output: "File changed during review; read it again before editing"}
+	}
+	if !exists && !os.IsNotExist(err) {
+		return Result{Output: "File appeared during review; read it again before editing"}
+	}
+	if err := access.WriteFile(targetPath, []byte(nextContent)); err != nil {
+		return fail(err)
 	}
 	return Result{OK: true, Output: "Applied reviewed changes to " + filePath}
 }

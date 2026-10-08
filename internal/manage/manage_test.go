@@ -1,15 +1,19 @@
 package manage
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/ssbsunshengbo/minicode-go/internal/config"
-	"github.com/ssbsunshengbo/minicode-go/internal/session"
+	"github.com/BigSmartie/Coding-Agent/internal/brand"
+	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/session"
+	"github.com/BigSmartie/Coding-Agent/internal/testutil"
 )
 
 func TestHelpCommand(t *testing.T) {
@@ -17,7 +21,7 @@ func TestHelpCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !handled || !strings.Contains(out, "minicode management commands") {
+	if !handled || !strings.Contains(out, "mycode management commands") {
 		t.Fatalf("unexpected result: %q handled=%v", out, handled)
 	}
 }
@@ -25,8 +29,8 @@ func TestHelpCommand(t *testing.T) {
 func TestSkillsList(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	root := filepath.Join(cwd, ".mini-code", "skills", "demo")
+	testutil.IsolateEnv(t, home)
+	root := filepath.Join(home, brand.ConfigDirName, "skills", "demo")
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -67,15 +71,16 @@ func TestMCPAddParsesProtocolAndEnv(t *testing.T) {
 
 func TestInstallLocalCommand(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.IsolateEnv(t, home)
 	cwd := t.TempDir()
+	t.Setenv("OPENAI_API_KEY", "key")
+	t.Setenv("OPENAI_CREDENTIAL_ORIGIN", "https://openai.example.test")
 	out, handled, err := Handle(context.Background(), cwd, []string{
 		"install-local",
 		"--skip-build",
 		"--provider", "openai",
 		"--model", "gpt-test",
 		"--base-url", "https://openai.example.test",
-		"--api-key", "key",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -83,12 +88,12 @@ func TestInstallLocalCommand(t *testing.T) {
 	if !handled {
 		t.Fatal("expected command handled")
 	}
-	for _, want := range []string{"Installed MiniCode Go", filepath.Join(home, ".local", "bin", "minicode"), "PATH"} {
+	for _, want := range []string{"Installed MyCode", filepath.Join(home, ".local", "bin", brand.LauncherName), "PATH"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(home, ".local", "bin", "minicode")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, ".local", "bin", brand.LauncherName)); err != nil {
 		t.Fatal(err)
 	}
 	runtime, err := config.LoadRuntime(cwd)
@@ -102,8 +107,13 @@ func TestInstallLocalCommand(t *testing.T) {
 
 func TestInstallLocalInteractivePromptsForSettings(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.IsolateEnv(t, home)
 	cwd := t.TempDir()
+	store := &fakeCredentialStore{values: map[string]string{}}
+	previousStore, previousInput := credentialStore, readSecretInput
+	credentialStore = store
+	readSecretInput = func(_ io.Reader, reader *bufio.Reader) (string, error) { return readLine(reader) }
+	t.Cleanup(func() { credentialStore, readSecretInput = previousStore, previousInput })
 	input := strings.NewReader("\nclaude-interactive\nhttps://anthropic.interactive.test\nsecret-token\n")
 	var prompts bytes.Buffer
 
@@ -114,10 +124,10 @@ func TestInstallLocalInteractivePromptsForSettings(t *testing.T) {
 	if !handled {
 		t.Fatal("expected command handled")
 	}
-	if !strings.Contains(prompts.String(), "mini-code installer") || !strings.Contains(out, "settings: "+config.SettingsPath()) {
+	if !strings.Contains(prompts.String(), "mycode installer") || !strings.Contains(out, "settings: "+config.SettingsPath()) {
 		t.Fatalf("expected installer prompts and settings output, prompts=%q out=%q", prompts.String(), out)
 	}
-	runtime, err := config.LoadRuntime(cwd)
+	runtime, err := config.LoadRuntimeWithStore(cwd, store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,14 +138,15 @@ func TestInstallLocalInteractivePromptsForSettings(t *testing.T) {
 
 func TestInstallLocalFlagOrderDoesNotChangeProviderEnvNames(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.IsolateEnv(t, home)
 	cwd := t.TempDir()
+	t.Setenv("OPENAI_API_KEY", "key")
+	t.Setenv("OPENAI_CREDENTIAL_ORIGIN", "https://openai.order.test")
 
 	_, handled, err := Handle(context.Background(), cwd, []string{
 		"install-local",
 		"--skip-build",
 		"--base-url", "https://openai.order.test",
-		"--api-key", "key",
 		"--provider", "openai",
 		"--model", "gpt-order",
 	})
@@ -154,9 +165,31 @@ func TestInstallLocalFlagOrderDoesNotChangeProviderEnvNames(t *testing.T) {
 	}
 }
 
+type fakeCredentialStore struct{ values map[string]string }
+
+func (f *fakeCredentialStore) Get(id string) (string, error) { return f.values[id], nil }
+func (f *fakeCredentialStore) Set(id, value string) error    { f.values[id] = value; return nil }
+func (f *fakeCredentialStore) Delete(id string) error        { delete(f.values, id); return nil }
+
+func TestCredentialFlagsRejectedWithoutEchoingValues(t *testing.T) {
+	for _, args := range [][]string{{"--api-key", "highly-sensitive"}, {"--auth-token", "highly-sensitive"}, {"--api-key=highly-sensitive"}, {"--auth-token=highly-sensitive"}} {
+		_, err := parseInstallArgs(args)
+		if err == nil || strings.Contains(err.Error(), "highly-sensitive") {
+			t.Fatalf("credential flag rejection leaked or accepted a secret: %v", err)
+		}
+	}
+}
+
+func TestHiddenSecretInputRefusesUnprotectedPipes(t *testing.T) {
+	input := strings.NewReader("secret\n")
+	if _, err := hiddenSecretInput(input, bufio.NewReader(input)); err == nil {
+		t.Fatal("unprotected input accepted")
+	}
+}
+
 func TestSessionsListCommand(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.IsolateEnv(t, home)
 	store := session.Store{Dir: config.SessionsDir()}
 	if err := store.Save(session.Record{ID: "session-1", CWD: "/tmp/project"}); err != nil {
 		t.Fatal(err)

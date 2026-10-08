@@ -27,7 +27,7 @@ func TestApplyReviewedChangeWritesAfterApproval(t *testing.T) {
 	}
 	permission := &approvingPermission{}
 
-	result := ApplyReviewedChange(context.Background(), permission, "note.txt", target, "new\n")
+	result := ApplyReviewedChange(context.Background(), permission, dir, "note.txt", target, "new\n")
 	if !result.OK {
 		t.Fatalf("unexpected result: %#v", result)
 	}
@@ -37,6 +37,13 @@ func TestApplyReviewedChangeWritesAfterApproval(t *testing.T) {
 	content, _ := os.ReadFile(target)
 	if string(content) != "new\n" {
 		t.Fatalf("unexpected content: %q", string(content))
+	}
+}
+
+func TestLargeDiffUsesBoundedFallback(t *testing.T) {
+	diff := BuildUnifiedDiff("large.txt", strings.Repeat("old\n", 2000), strings.Repeat("new\n", 2000))
+	if !strings.Contains(diff, "-old\n") || !strings.Contains(diff, "+new\n") {
+		t.Fatal("bounded diff lost content")
 	}
 }
 

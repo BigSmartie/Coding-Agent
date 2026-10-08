@@ -1,159 +1,70 @@
-# MiniCode Roadmap
+# MyCode Roadmap
 
-MiniCode already has a usable lightweight terminal coding workflow, but there is still a visible gap between the current `main` branch and a more complete Claude Code-like runtime.
+MyCode is an early Alpha. The P0 implementation baseline is complete; its exact
+validation evidence and remaining environment checks are recorded in
+[P0_DEVELOPMENT.md](P0_DEVELOPMENT.md). [SECURITY.md](SECURITY.md) defines the
+current trust boundary.
 
-This roadmap highlights the most valuable missing capabilities and the order in which they should ideally be improved.
+## P0: Safety and reliability baseline
 
-Pull requests are welcome, especially when they align with the contribution guidelines and keep the project lightweight.
+P0 covers buildable terminal interaction, OS-backed credential references,
+credential-origin binding, explicit workspace and MCP trust, reviewed file
+edits, fail-closed Docker command execution, bounded provider streaming,
+retry/cancellation, multi-tool continuity, and resumable session snapshots.
 
-## P0
+P0 deliberately keeps command and MCP workspaces temporary and offline. Live
+provider checks and native credential-store checks are opt-in because they need
+user-owned credentials or platform services.
 
-### 1. Model-aware context management
+## P1: Long-running agent runtime
 
-This is the most important missing runtime capability.
+P1 is developed in dependency order. Each milestone requires an RFC and threat
+model, versioned data contracts, migration and rollback behavior, deterministic
+fixtures, race/fault/adversarial tests, platform integration, and updated docs.
 
-It includes:
+### P1.1 Event journal, checkpoints, and model capabilities
 
-- model-aware context window configuration
-- provider-reported usage accounting
-- context usage display in the TUI
-- automatic context compaction for long conversations
+- append-only typed events for turns, approvals, model calls, tool calls, and jobs
+- atomic checkpoints and crash replay without duplicate tool execution
+- session schema migration and cross-process locking
+- provider capability metadata for context windows, tools, reasoning, usage, and caching
 
-This work matters because long-session stability depends on it. It is also one of the most important design areas where MiniCode still trails a more complete Claude Code-style runtime.
+### P1.2 Context budgeting, compaction, and layered memory
 
-### 2. API retry and backoff
+- request-time token budgeting with provider-reported usage
+- deterministic compaction that preserves complete tool-call/result groups
+- protection for opaque Responses state and Anthropic signatures
+- trusted global, project, nested, and included memory with cycle and size limits
 
-MiniCode should handle transient API failures more gracefully.
+### P1.3 Durable tasks, PTY, and background jobs
 
-This includes:
+- structured task state that survives compaction and restart
+- bounded PTY/job start, attach, read, write, poll, cancel, and process-tree cleanup
+- explicit reviewed export of selected sandbox artifacts to the host workspace
 
-- retry on 429 and 5xx responses
-- exponential backoff
-- support for `Retry-After` when available
+### P1.4 Controlled network, provider conformance, and remote MCP
 
-Without this, provider-side instability leaks too directly into the main interaction loop.
+- deny-by-default egress broker with exact origin grants and audit events
+- SSRF, redirect, DNS-rebinding, credential-scope, traffic, and response limits
+- one conformance suite for Anthropic, OpenAI, gateways, and compatible providers
+- MCP capability negotiation, pagination, notifications, cancellation, and Streamable HTTP
 
-### 3. Session persistence and resume
+### P1.5 Sub-agents, evaluation, and release engineering
 
-MiniCode should be able to save and resume sessions reliably.
+- bounded sub-agents with narrower tools, paths, network, concurrency, and token budgets
+- sanitized local traces and reproducible repository-task evaluation
+- fuzz/fault suites, SBOM, checksums, reproducible archives, and signed releases
 
-This includes:
+## P2: Optional product breadth
 
-- autosave
-- manual resume
-- basic session recovery
+- notebook editing
+- built-in web search/fetch beyond MCP and controlled network profiles
+- richer IDE integrations
+- advanced prompt caching and cost optimization
+- native sandbox backends where Docker is unavailable
 
-This is important for real-world usage and longer task execution.
+## Contribution gate
 
-### 4. Multi-language implementation branches
-
-Another important direction is to explore parallel implementations of MiniCode in other languages, especially:
-
-- Python
-- Go
-- Rust
-
-This is particularly valuable for the learning side of the project.
-
-The goal is not to fragment the main codebase immediately. The goal is to encourage language-specific branches or companion implementations that preserve the same core ideas:
-
-- lightweight architecture
-- Claude Code-aligned design direction
-- readable agent loop and tool model
-- educational value for contributors studying different ecosystems
-
-If you are interested in building or maintaining a Python, Go, or Rust variant, contributions and direct collaboration are welcome.
-
-## P1
-
-### 5. Layered memory loading
-
-MiniCode should support a lightweight memory hierarchy similar in spirit to Claude Code's layered project context.
-
-This may include:
-
-- global memory
-- project memory
-- nested/project-local memory
-- simple include support where appropriate
-
-### 6. Stronger provider abstraction
-
-MiniCode currently works well with Anthropic-style APIs and some compatible providers, but the provider model can be made more explicit and complete.
-
-Target direction:
-
-- Anthropic
-- OpenAI-compatible endpoints
-- OpenRouter
-- LiteLLM-style gateways
-
-### 7. Todo or task tracking support
-
-A lightweight built-in task tracker would improve long multi-step execution.
-
-This should stay simple and should not become a heavyweight planning subsystem.
-
-### 8. `.claude/agents` and sub-agent support
-
-This is an important capability, but it also adds complexity.
-
-It is worth doing after the core runtime is more stable.
-
-### 9. Expand the core toolset selectively
-
-MiniCode does not need to chase Claude Code's full tool count mechanically, but it does need to expand beyond the current minimal set over time.
-
-The direction here should be:
-
-- add tools that support core runtime capabilities
-- prefer Claude Code-aligned tool patterns over unrelated inventions
-- keep the built-in set small and high-value
-- continue to rely on MCP for many external or optional capabilities
-
-Priority should go to missing core tool categories such as:
-
-- session and memory related capabilities
-- context management related capabilities
-- lightweight task tracking
-- a few high-value built-in tools where MCP is not a sufficient substitute
-
-The goal is not tool-count parity. The goal is a stronger core toolset while preserving MiniCode's lightweight identity.
-
-## P2
-
-### 9. Notebook editing support
-
-Useful, but not essential for the main terminal coding workflow.
-
-### 10. Built-in web tools
-
-MiniCode can already extend itself through MCP, so built-in `WebFetch` / `WebSearch` are useful but not the most urgent gap.
-
-### 11. Evaluation and trace infrastructure
-
-This includes:
-
-- benchmark harnesses
-- structured trace capture
-- reproducible agent evaluation
-
-This is valuable for research and comparison, but it is not on the critical path for the main product loop.
-
-### 12. Prompt caching
-
-Worth exploring later, especially once context accounting and provider integration are more mature.
-
-## Contribution Notes
-
-If you want to contribute in these areas:
-
-- prefer focused PRs
-- keep the implementation lightweight
-- align the design with Claude Code's direction where possible
-- explain how the change was validated
-
-See:
-
-- [Contribution Guidelines](./CONTRIBUTING.md)
-- [中文贡献规范](./CONTRIBUTING_ZH.md)
+Prefer focused changes with explicit validation. A feature that changes files,
+processes, credentials, network access, persisted state, or model-visible trust
+must include its failure behavior and security tests in the same change.

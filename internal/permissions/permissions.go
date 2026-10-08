@@ -2,14 +2,19 @@ package permissions
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
-	"github.com/ssbsunshengbo/minicode-go/internal/workspace"
+	"github.com/BigSmartie/Coding-Agent/internal/safety"
+	"github.com/BigSmartie/Coding-Agent/internal/workspace"
 )
 
 type Kind string
@@ -68,41 +73,41 @@ type Manager struct {
 	prompt                 Prompt
 	allowedDirectoryPrefix map[string]bool
 	deniedDirectoryPrefix  map[string]bool
-	sessionAllowedPaths    map[string]bool
-	sessionDeniedPaths     map[string]bool
 	allowedCommands        map[string]bool
 	deniedCommands         map[string]bool
-	sessionAllowedCommands map[string]bool
-	sessionDeniedCommands  map[string]bool
 	allowedEdits           map[string]bool
 	deniedEdits            map[string]bool
-	sessionAllowedEdits    map[string]bool
-	sessionDeniedEdits     map[string]bool
 	turnAllowedEdits       map[string]bool
 	turnAllowAllEdits      bool
 }
 
 func New(workspaceRoot, storePath string, prompt Prompt) (*Manager, error) {
-	root, err := filepath.Abs(workspaceRoot)
+	root, err := workspace.Canonical(workspaceRoot)
 	if err != nil {
 		return nil, err
 	}
+	storeAbsolute, err := filepath.Abs(storePath)
+	if err != nil {
+		return nil, err
+	}
+	storeCanonical, err := workspace.Canonical(storeAbsolute)
+	if err != nil {
+		return nil, err
+	}
+	if workspace.Within(root, storeCanonical) {
+		return nil, fmt.Errorf("permission store must be outside the workspace")
+	}
+	storePath = storeAbsolute
 	manager := &Manager{
 		workspaceRoot:          root,
 		storePath:              storePath,
 		prompt:                 prompt,
 		allowedDirectoryPrefix: map[string]bool{},
 		deniedDirectoryPrefix:  map[string]bool{},
-		sessionAllowedPaths:    map[string]bool{},
-		sessionDeniedPaths:     map[string]bool{},
 		allowedCommands:        map[string]bool{},
 		deniedCommands:         map[string]bool{},
-		sessionAllowedCommands: map[string]bool{},
-		sessionDeniedCommands:  map[string]bool{},
 		allowedEdits:           map[string]bool{},
 		deniedEdits:            map[string]bool{},
-		sessionAllowedEdits:    map[string]bool{},
-		sessionDeniedEdits:     map[string]bool{},
 		turnAllowedEdits:       map[string]bool{},
 	}
 	if err := manager.load(); err != nil {
@@ -132,9 +137,9 @@ func (m *Manager) Summary() []string {
 		summary = append(summary, "extra allowed dirs: none")
 	}
 	if len(m.allowedCommands) > 0 {
-		summary = append(summary, "dangerous allowlist: "+strings.Join(firstKeys(m.allowedCommands, 4), ", "))
+		summary = append(summary, "approved command ids: "+strings.Join(firstKeys(m.allowedCommands, 4), ", "))
 	} else {
-		summary = append(summary, "dangerous allowlist: none")
+		summary = append(summary, "approved command ids: none")
 	}
 	if len(m.allowedEdits) > 0 {
 		summary = append(summary, "trusted edit targets: "+strings.Join(firstKeys(m.allowedEdits, 2), ", "))
@@ -143,21 +148,21 @@ func (m *Manager) Summary() []string {
 }
 
 func (m *Manager) EnsurePathAccess(ctx context.Context, targetPath, intent string) error {
-	target, err := filepath.Abs(targetPath)
+	target, err := workspace.Canonical(targetPath)
 	if err != nil {
 		return err
 	}
 	if workspace.Within(m.workspaceRoot, target) {
 		return nil
 	}
-	if m.sessionDeniedPaths[target] || matchesPrefix(target, m.deniedDirectoryPrefix) {
+	if matchesPrefix(target, m.deniedDirectoryPrefix) {
 		return fmt.Errorf("Access denied for path outside cwd: %s", target)
 	}
-	if m.sessionAllowedPaths[target] || matchesPrefix(target, m.allowedDirectoryPrefix) {
+	if matchesPrefix(target, m.allowedDirectoryPrefix) {
 		return nil
 	}
 	if m.prompt == nil {
-		return fmt.Errorf("Path %s is outside cwd %s. Start minicode in TTY mode to approve it.", target, m.workspaceRoot)
+		return fmt.Errorf("Path %s is outside cwd %s. Start mycode in TTY mode to approve it.", target, m.workspaceRoot)
 	}
 	scope := filepath.Dir(target)
 	if intent == "list" || intent == "command_cwd" {
@@ -165,13 +170,13 @@ func (m *Manager) EnsurePathAccess(ctx context.Context, targetPath, intent strin
 	}
 	result, err := m.prompt(ctx, Request{
 		Kind:    KindPath,
-		Summary: "mini-code wants " + strings.ReplaceAll(intent, "_", " ") + " access outside the current cwd",
+		Summary: "MyCode wants " + strings.ReplaceAll(intent, "_", " ") + " access outside the current cwd",
 		Details: []string{"cwd: " + m.workspaceRoot, "target: " + target, "scope directory: " + scope},
 		Scope:   scope,
 		Choices: []Choice{
+			{Key: "n", Label: "deny once (default)", Decision: DecisionDenyOnce},
 			{Key: "y", Label: "allow once", Decision: DecisionAllowOnce},
 			{Key: "a", Label: "allow this directory", Decision: DecisionAllowAlways},
-			{Key: "n", Label: "deny once", Decision: DecisionDenyOnce},
 			{Key: "d", Label: "deny this directory", Decision: DecisionDenyAlways},
 		},
 	})
@@ -180,7 +185,6 @@ func (m *Manager) EnsurePathAccess(ctx context.Context, targetPath, intent strin
 	}
 	switch result.Decision {
 	case DecisionAllowOnce:
-		m.sessionAllowedPaths[target] = true
 		return nil
 	case DecisionAllowAlways:
 		m.allowedDirectoryPrefix[scope] = true
@@ -189,7 +193,6 @@ func (m *Manager) EnsurePathAccess(ctx context.Context, targetPath, intent strin
 		m.deniedDirectoryPrefix[scope] = true
 		_ = m.persist()
 	}
-	m.sessionDeniedPaths[target] = true
 	return fmt.Errorf("Access denied for path outside cwd: %s", target)
 }
 
@@ -199,27 +202,27 @@ func (m *Manager) EnsureCommand(ctx context.Context, command string, args []stri
 	}
 	reason := ClassifyDangerousCommand(command, args)
 	if reason == "" {
-		return nil
+		reason = "every executable may run project code; approval applies only to this command in the sandbox"
 	}
-	signature := formatCommand(command, args)
-	if m.sessionDeniedCommands[signature] || m.deniedCommands[signature] {
+	signature := commandScope(command, args, cwd)
+	if m.deniedCommands[signature] {
 		return fmt.Errorf("Command denied: %s", signature)
 	}
-	if m.sessionAllowedCommands[signature] || m.allowedCommands[signature] {
+	if m.allowedCommands[signature] {
 		return nil
 	}
 	if m.prompt == nil {
-		return fmt.Errorf("Command requires approval: %s. Start minicode in TTY mode to approve it.", signature)
+		return fmt.Errorf("Command requires approval: %s. Start mycode in TTY mode to approve it.", signature)
 	}
 	result, err := m.prompt(ctx, Request{
 		Kind:    KindCommand,
-		Summary: "mini-code wants to run a dangerous command",
-		Details: []string{"cwd: " + cwd, "command: " + signature, "reason: " + reason},
+		Summary: "MyCode wants to run a command (potentially dangerous) in the isolated sandbox",
+		Details: []string{"cwd: " + cwd, "command: " + formatCommand(command, args), "reason: " + reason},
 		Scope:   signature,
 		Choices: []Choice{
+			{Key: "n", Label: "deny once (default)", Decision: DecisionDenyOnce},
 			{Key: "y", Label: "allow once", Decision: DecisionAllowOnce},
 			{Key: "a", Label: "always allow this command", Decision: DecisionAllowAlways},
-			{Key: "n", Label: "deny once", Decision: DecisionDenyOnce},
 			{Key: "d", Label: "always deny this command", Decision: DecisionDenyAlways},
 		},
 	})
@@ -228,7 +231,6 @@ func (m *Manager) EnsureCommand(ctx context.Context, command string, args []stri
 	}
 	switch result.Decision {
 	case DecisionAllowOnce:
-		m.sessionAllowedCommands[signature] = true
 		return nil
 	case DecisionAllowAlways:
 		m.allowedCommands[signature] = true
@@ -237,35 +239,34 @@ func (m *Manager) EnsureCommand(ctx context.Context, command string, args []stri
 		m.deniedCommands[signature] = true
 		_ = m.persist()
 	}
-	m.sessionDeniedCommands[signature] = true
 	return fmt.Errorf("Command denied: %s", signature)
 }
 
 func (m *Manager) EnsureEdit(ctx context.Context, targetPath, diffPreview string) error {
-	target, err := filepath.Abs(targetPath)
+	target, err := workspace.Canonical(targetPath)
 	if err != nil {
 		return err
 	}
-	if m.sessionDeniedEdits[target] || m.deniedEdits[target] {
+	if m.deniedEdits[target] {
 		return fmt.Errorf("Edit denied: %s", target)
 	}
-	if m.sessionAllowedEdits[target] || m.turnAllowedEdits[target] || m.turnAllowAllEdits || m.allowedEdits[target] {
+	if m.turnAllowedEdits[target] || m.turnAllowAllEdits || m.allowedEdits[target] {
 		return nil
 	}
 	if m.prompt == nil {
-		return fmt.Errorf("Edit requires approval: %s. Start minicode in TTY mode to review it.", target)
+		return fmt.Errorf("Edit requires approval: %s. Start mycode in TTY mode to review it.", target)
 	}
 	result, err := m.prompt(ctx, Request{
 		Kind:    KindEdit,
-		Summary: "mini-code wants to apply a file modification",
+		Summary: "MyCode wants to apply a file modification",
 		Details: []string{"target: " + target, "", diffPreview},
 		Scope:   target,
 		Choices: []Choice{
+			{Key: "5", Label: "reject once (default)", Decision: DecisionDenyOnce},
 			{Key: "1", Label: "apply once", Decision: DecisionAllowOnce},
 			{Key: "2", Label: "allow this file in this turn", Decision: DecisionAllowTurn},
 			{Key: "3", Label: "allow all edits in this turn", Decision: DecisionAllowAllTurn},
 			{Key: "4", Label: "always allow this file", Decision: DecisionAllowAlways},
-			{Key: "5", Label: "reject once", Decision: DecisionDenyOnce},
 			{Key: "6", Label: "reject and send guidance to model", Decision: DecisionDenyWithFeedback},
 			{Key: "7", Label: "always reject this file", Decision: DecisionDenyAlways},
 		},
@@ -275,7 +276,6 @@ func (m *Manager) EnsureEdit(ctx context.Context, targetPath, diffPreview string
 	}
 	switch result.Decision {
 	case DecisionAllowOnce:
-		m.sessionAllowedEdits[target] = true
 		return nil
 	case DecisionAllowTurn:
 		m.turnAllowedEdits[target] = true
@@ -294,7 +294,6 @@ func (m *Manager) EnsureEdit(ctx context.Context, targetPath, diffPreview string
 		m.deniedEdits[target] = true
 		_ = m.persist()
 	}
-	m.sessionDeniedEdits[target] = true
 	return fmt.Errorf("Edit denied: %s", target)
 }
 
@@ -330,12 +329,49 @@ func ClassifyDangerousCommand(command string, args []string) string {
 
 func (m *Manager) load() error {
 	var store Store
-	bytes, err := os.ReadFile(m.storePath)
+	linkInfo, err := os.Lstat(m.storePath)
 	if os.IsNotExist(err) {
 		return nil
 	}
 	if err != nil {
 		return err
+	}
+	if !linkInfo.Mode().IsRegular() {
+		return fmt.Errorf("permission store must be a regular file without links")
+	}
+	directory, err := os.OpenRoot(filepath.Dir(m.storePath))
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	file, err := workspace.OpenNoFollow(directory, filepath.Base(m.storePath))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	openedPath, err := workspace.OpenedPath(file)
+	if err != nil {
+		return err
+	}
+	if workspace.Within(m.workspaceRoot, openedPath) {
+		return fmt.Errorf("permission store handle points inside workspace")
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(linkInfo, info) || !info.Mode().IsRegular() || info.Size() > 1024*1024 {
+		return fmt.Errorf("invalid permission store: expected regular file up to 1 MiB")
+	}
+	bytes, err := io.ReadAll(io.LimitReader(file, 1024*1024+1))
+	if err != nil {
+		return err
+	}
+	if len(bytes) > 1024*1024 {
+		return fmt.Errorf("permission store exceeds 1 MiB")
 	}
 	if err := json.Unmarshal(bytes, &store); err != nil {
 		return err
@@ -350,6 +386,13 @@ func (m *Manager) load() error {
 }
 
 func (m *Manager) persist() error {
+	canonical, err := workspace.Canonical(m.storePath)
+	if err != nil {
+		return err
+	}
+	if workspace.Within(m.workspaceRoot, canonical) {
+		return fmt.Errorf("permission store must remain outside the workspace")
+	}
 	store := Store{
 		AllowedDirectoryPrefixes: keys(m.allowedDirectoryPrefix),
 		DeniedDirectoryPrefixes:  keys(m.deniedDirectoryPrefix),
@@ -358,14 +401,11 @@ func (m *Manager) persist() error {
 		AllowedEditPatterns:      keys(m.allowedEdits),
 		DeniedEditPatterns:       keys(m.deniedEdits),
 	}
-	if err := os.MkdirAll(filepath.Dir(m.storePath), 0o755); err != nil {
-		return err
-	}
 	bytes, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(m.storePath, append(bytes, '\n'), 0o644)
+	return safety.PrivateWrite(m.storePath, append(bytes, '\n'))
 }
 
 func matchesPrefix(target string, prefixes map[string]bool) bool {
@@ -378,7 +418,13 @@ func matchesPrefix(target string, prefixes map[string]bool) bool {
 }
 
 func formatCommand(command string, args []string) string {
-	return strings.TrimSpace(strings.Join(append([]string{command}, args...), " "))
+	parts := append([]string{command}, args...)
+	for i, part := range parts {
+		if part == "" || strings.ContainsAny(part, " \t\r\n\"'\\") {
+			parts[i] = strconv.Quote(part)
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 func contains(values []string, want string) bool {
@@ -420,4 +466,16 @@ func firstKeys(values map[string]bool, limit int) []string {
 		return out[:limit]
 	}
 	return out
+}
+
+// commandScope binds persisted approval to an exact argv and working directory.
+// JSON avoids ambiguous shell-like joins such as ["a b"] versus ["a", "b"].
+func commandScope(command string, args []string, cwd string) string {
+	value, _ := json.Marshal(struct {
+		CWD     string
+		Command string
+		Args    []string
+	}{cwd, command, args})
+	sum := sha256.Sum256(value)
+	return "command-v1:" + hex.EncodeToString(sum[:])
 }

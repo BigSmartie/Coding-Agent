@@ -1,4 +1,8 @@
-# MiniCode
+# MyCode
+
+> Go 版本的 P0 Alpha 基线已经冻结。请先阅读 [最新使用说明](README.md)、
+> [安全边界](SECURITY.md) 和 [P0 验收记录](P0_DEVELOPMENT.md)。下文是历史介绍，
+> 旧的明文 Key、自动 MCP 启动和宿主命令执行方式已停用。
 
 <p align="center">
   <img src="./docs/logo.svg" alt="MiniCode Logo" width="180" />

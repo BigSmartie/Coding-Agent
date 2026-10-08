@@ -3,11 +3,13 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	"github.com/BigSmartie/Coding-Agent/internal/message"
 )
 
 func TestRenderPanelWrapsTitleAndBody(t *testing.T) {
 	out := RenderPanel("session", "hello\nworld", PanelOptions{Width: 24})
-	for _, want := range []string{"╭", "╮", "╰", "╯", "session", "hello", "world"} {
+	for _, want := range []string{"\u250c", "\u2510", "\u2514", "\u2518", "session", "hello", "world"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("panel missing %q:\n%s", want, out)
 		}
@@ -15,7 +17,7 @@ func TestRenderPanelWrapsTitleAndBody(t *testing.T) {
 }
 
 func TestRenderPanelAccountsForWideCharacters(t *testing.T) {
-	out := RenderPanel("会话", "你好世界abc", PanelOptions{Width: 24})
+	out := RenderPanel("\u4f1a\u8bdd", "\u4f60\u597d\u4e16\u754cabc", PanelOptions{Width: 24})
 	plain := ansiPattern.ReplaceAllString(out, "")
 	lines := strings.Split(plain, "\n")
 	for _, line := range lines {
@@ -82,7 +84,7 @@ func TestRenderTranscriptFormatsMarkdownishAssistantText(t *testing.T) {
 	}}, 0, 20)
 	for _, want := range []string{
 		"\x1b[36m\x1b[1mTitle\x1b[0m",
-		"\x1b[33m•\x1b[0m item with \x1b[35mcode\x1b[0m and \x1b[1mbold\x1b[0m",
+		"\x1b[33m\u2022\x1b[0m item with \x1b[35mcode\x1b[0m and \x1b[1mbold\x1b[0m",
 		"\x1b[2m```go\x1b[0m",
 		"\x1b[2mfmt.Println(1)\x1b[0m",
 	} {
@@ -131,5 +133,40 @@ func TestRenderTranscriptPreviewsLargeToolOutput(t *testing.T) {
 	}}, 0, 80)
 	if strings.Contains(out, "line 40") || !strings.Contains(out, "output truncated in transcript") {
 		t.Fatalf("large read_file output was not previewed:\n%q", out)
+	}
+}
+
+func TestRenderHomeScreenShowsSectionsAndComposer(t *testing.T) {
+	out := RenderHomeScreen("MyCode", "v0.1.0", "D:\\MiniCode", "gpt-5.5", []InfoSection{
+		{Title: "Tips for getting started", Body: "Run /help"},
+		{Title: "What's new", Body: "Fresh paint"},
+	}, "Banner text", "", 0, nil, 0, message.TokenUsage{TotalTokens: 321}, 100, 32)
+	plain := ansiPattern.ReplaceAllString(out, "")
+	for _, want := range []string{"MyCode", "Welcome back!", "Tips for getting started", "What's new", "Banner text", `Try "fix typecheck errors"`, "tok 321"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("home screen missing %q:\n%s", want, plain)
+		}
+	}
+}
+
+func TestRenderComposerShowsPromptAndFooter(t *testing.T) {
+	out := RenderComposer("hello", 5, ComposerOptions{
+		Width:      60,
+		Prompt:     ">",
+		RightText:  "Enter send",
+		FooterText: "? shortcuts | / commands",
+	})
+	plain := ansiPattern.ReplaceAllString(out, "")
+	for _, want := range []string{"> hello", "Enter send", "? shortcuts | / commands"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("composer missing %q:\n%s", want, plain)
+		}
+	}
+}
+
+func TestFormatUsageCompact(t *testing.T) {
+	got := formatUsageCompact(message.TokenUsage{InputTokens: 120, OutputTokens: 45, TotalTokens: 165})
+	if got != "tok 165 (120/45)" {
+		t.Fatalf("unexpected compact usage: %q", got)
 	}
 }

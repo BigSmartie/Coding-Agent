@@ -1,16 +1,14 @@
 package model
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 
-	"github.com/ssbsunshengbo/minicode-go/internal/config"
-	"github.com/ssbsunshengbo/minicode-go/internal/message"
-	"github.com/ssbsunshengbo/minicode-go/internal/tools"
+	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/message"
+	"github.com/BigSmartie/Coding-Agent/internal/tools"
 )
 
 type RuntimeProvider func(context.Context) (config.Runtime, error)
@@ -22,53 +20,53 @@ type Anthropic struct {
 }
 
 func NewAnthropic(runtime RuntimeProvider, registry *tools.Registry) *Anthropic {
-	return &Anthropic{runtime: runtime, tools: registry, client: http.DefaultClient}
+	return &Anthropic{runtime: runtime, tools: registry, client: newHTTPClient()}
 }
 
 func (a *Anthropic) Next(ctx context.Context, messages []message.Message) (message.Step, error) {
+	return a.NextStream(ctx, messages, nil)
+}
+
+func (a *Anthropic) NextStream(ctx context.Context, messages []message.Message, onTextDelta func(string)) (step message.Step, err error) {
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+	defer func() {
+		if err != nil && ctx.Err() != nil {
+			err = ctx.Err()
+		}
+	}()
 	runtime, err := a.runtime(ctx)
 	if err != nil {
 		return message.Step{}, err
 	}
 	payload := toAnthropicPayload(runtime, a.tools, messages)
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return message.Step{}, err
+	if onTextDelta != nil {
+		payload["stream"] = true
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(runtime.BaseURL, "/")+"/v1/messages", bytes.NewReader(body))
-	if err != nil {
-		return message.Step{}, err
-	}
-	req.Header.Set("content-type", "application/json")
-	req.Header.Set("anthropic-version", "2023-06-01")
-	if runtime.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+runtime.AuthToken)
-	} else if runtime.APIKey != "" {
-		req.Header.Set("x-api-key", runtime.APIKey)
-	}
-
-	res, err := a.client.Do(req)
+	res, err := requestJSON(ctx, a.client, anthropicMessagesURL(runtime.BaseURL), payload, func(req *http.Request) {
+		req.Header.Set("anthropic-version", "2023-06-01")
+		if runtime.AuthToken != "" {
+			req.Header.Set("Authorization", "Bearer "+runtime.AuthToken)
+		} else if runtime.APIKey != "" {
+			req.Header.Set("x-api-key", runtime.APIKey)
+		}
+	})
 	if err != nil {
 		return message.Step{}, err
 	}
 	defer res.Body.Close()
 
-	var data struct {
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
-		StopReason string         `json:"stop_reason"`
-		Content    []contentBlock `json:"content"`
+	var data anthropicResponse
+	if isSSE(res) {
+		data, err = readAnthropicStream(res.Body, onTextDelta)
+	} else {
+		err = decodeResponse(res.Body, &data)
 	}
-	if err := json.NewDecoder(res.Body).Decode(&data); err != nil {
+	if err != nil {
 		return message.Step{}, err
 	}
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		if data.Error != nil && data.Error.Message != "" {
-			return message.Step{}, fmt.Errorf(data.Error.Message)
-		}
-		return message.Step{}, fmt.Errorf("Model request failed: %d", res.StatusCode)
+	if data.Error != nil {
+		return message.Step{}, &RequestError{Reason: "provider returned an error"}
 	}
 
 	textParts := []string{}
@@ -93,22 +91,77 @@ func (a *Anthropic) Next(ctx context.Context, messages []message.Message) (messa
 
 	content, kind := ParseAssistantText(strings.TrimSpace(strings.Join(textParts, "\n")))
 	diagnostics := message.Diagnostics{StopReason: data.StopReason, BlockTypes: blockTypes, IgnoredBlockTypes: ignored}
+	diagnostics.Usage = message.TokenUsage{
+		InputTokens:  data.Usage.InputTokens,
+		OutputTokens: data.Usage.OutputTokens,
+		TotalTokens:  data.Usage.InputTokens + data.Usage.OutputTokens,
+	}
+	if data.StopReason == "max_tokens" && (len(calls) > 0 || content != "") {
+		return message.Step{}, &RequestError{Reason: "incomplete model output (max_tokens)"}
+	}
+	state := &message.ProviderState{Protocol: "anthropic_messages"}
+	for _, block := range data.Content {
+		raw := block.Raw
+		if len(raw) == 0 {
+			raw, _ = json.Marshal(block)
+		}
+		state.Items = append(state.Items, raw)
+	}
 	if len(calls) > 0 {
 		contentKind := message.ContentNone
 		if kind == message.ContentProgress {
 			contentKind = message.ContentProgress
 		}
-		return message.ToolCallsStep(calls, content, contentKind, diagnostics), nil
+		step = message.ToolCallsStep(calls, content, contentKind, diagnostics)
+	} else {
+		step = message.AssistantStep(content, kind, diagnostics)
 	}
-	return message.AssistantStep(content, kind, diagnostics), nil
+	step.ProviderState = state
+	return step, nil
+}
+
+type anthropicResponse struct {
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+	StopReason string         `json:"stop_reason"`
+	Content    []contentBlock `json:"content"`
+	Usage      struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
+}
+
+func anthropicMessagesURL(baseURL string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		return "https://api.anthropic.com/v1/messages"
+	}
+	if strings.HasSuffix(base, "/messages") {
+		return base
+	}
+	if strings.HasSuffix(base, "/v1") {
+		return base + "/messages"
+	}
+	return base + "/v1/messages"
 }
 
 type contentBlock struct {
-	Type  string `json:"type"`
-	Text  string `json:"text,omitempty"`
-	ID    string `json:"id,omitempty"`
-	Name  string `json:"name,omitempty"`
-	Input any    `json:"input,omitempty"`
+	Raw   json.RawMessage `json:"-"`
+	Type  string          `json:"type"`
+	Text  string          `json:"text,omitempty"`
+	ID    string          `json:"id,omitempty"`
+	Name  string          `json:"name,omitempty"`
+	Input any             `json:"input,omitempty"`
+}
+
+func (block *contentBlock) UnmarshalJSON(raw []byte) error {
+	type decoded contentBlock
+	if err := json.Unmarshal(raw, (*decoded)(block)); err != nil {
+		return err
+	}
+	block.Raw = append(json.RawMessage(nil), raw...)
+	return nil
 }
 
 func ParseAssistantText(content string) (string, message.ContentKind) {
@@ -139,7 +192,16 @@ func toAnthropicPayload(runtime config.Runtime, registry *tools.Registry, messag
 	systemParts := []string{}
 	apiMessages := []map[string]any{}
 	for _, msg := range messages {
+		if msg.MirrorProtocol == "anthropic_messages" {
+			continue
+		}
 		switch msg.Role {
+		case message.RoleProviderState:
+			if msg.ProviderState != nil && msg.ProviderState.Protocol == "anthropic_messages" {
+				for _, raw := range msg.ProviderState.Items {
+					apiMessages = appendAnthropicBlock(apiMessages, "assistant", rawObject(raw))
+				}
+			}
 		case message.RoleSystem:
 			systemParts = append(systemParts, msg.Content)
 		case message.RoleUser:
@@ -165,10 +227,11 @@ func toAnthropicPayload(runtime config.Runtime, registry *tools.Registry, messag
 		})
 	}
 	payload := map[string]any{
-		"model":    runtime.Model,
-		"system":   strings.Join(systemParts, "\n\n"),
-		"messages": apiMessages,
-		"tools":    toolSchemas,
+		"max_tokens": 4096,
+		"model":      runtime.Model,
+		"system":     strings.Join(systemParts, "\n\n"),
+		"messages":   apiMessages,
+		"tools":      toolSchemas,
 	}
 	if runtime.MaxOutputTokens > 0 {
 		payload["max_tokens"] = runtime.MaxOutputTokens

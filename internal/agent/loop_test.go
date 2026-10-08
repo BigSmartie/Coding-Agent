@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ssbsunshengbo/minicode-go/internal/message"
-	"github.com/ssbsunshengbo/minicode-go/internal/tools"
+	"github.com/BigSmartie/Coding-Agent/internal/message"
+	"github.com/BigSmartie/Coding-Agent/internal/tools"
 )
 
 type scriptedModel struct {
@@ -195,7 +195,7 @@ func TestRunTurnIncludesDiagnosticsInEmptyFallback(t *testing.T) {
 	}
 
 	got := out[len(out)-1].Content
-	for _, want := range []string{"模型返回空响应", "诊断信息: stop_reason=end_turn; blocks=thinking; ignored=thinking。"} {
+	for _, want := range []string{"Model returned an empty response", "Diagnostics: stop_reason=end_turn; blocks=thinking; ignored=thinking."} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("fallback missing %q:\n%s", want, got)
 		}

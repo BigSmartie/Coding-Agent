@@ -85,7 +85,7 @@ func TestSummaryIncludesPersistentAllowlists(t *testing.T) {
 	}
 
 	summary := strings.Join(pm.Summary(), "\n")
-	for _, want := range []string{"cwd: " + cwd, "extra allowed dirs:", "dangerous allowlist: git reset --hard", "trusted edit targets:"} {
+	for _, want := range []string{"cwd: " + cwd, "extra allowed dirs:", "approved command ids: command-v1:", "trusted edit targets:"} {
 		if !strings.Contains(summary, want) {
 			t.Fatalf("summary missing %q:\n%s", want, summary)
 		}

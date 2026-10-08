@@ -1,6 +1,9 @@
 package tui
 
-import "strings"
+import (
+	"github.com/BigSmartie/Coding-Agent/internal/safety"
+	"strings"
+)
 
 const (
 	ansiReset   = "\x1b[0m"
@@ -17,6 +20,7 @@ const (
 )
 
 func RenderUnifiedDiff(diff string) string {
+	diff = safety.EscapeTerminal(diff)
 	lines := strings.Split(strings.TrimRight(diff, "\n"), "\n")
 	out := make([]string, 0, len(lines))
 	for index := 0; index < len(lines); index++ {

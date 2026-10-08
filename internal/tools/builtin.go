@@ -1,19 +1,16 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/ssbsunshengbo/minicode-go/internal/filereview"
-	"github.com/ssbsunshengbo/minicode-go/internal/workspace"
+	"github.com/BigSmartie/Coding-Agent/internal/sandbox"
+	"github.com/BigSmartie/Coding-Agent/internal/workspace"
 )
 
 type SkillLoader interface {
@@ -49,12 +46,20 @@ func listFilesTool() Definition {
 			if err != nil {
 				return Error(err.Error())
 			}
-			entries, err := os.ReadDir(target)
+			access, err := workspace.Open(tc.CWD)
+			if err != nil {
+				return Error(err.Error())
+			}
+			defer access.Close()
+			entries, err := access.ReadDir(target, 201)
 			if err != nil {
 				return Error(err.Error())
 			}
 			lines := []string{}
 			for i, entry := range entries {
+				if workspace.Protected(entry.Name()) || entry.Type()&os.ModeSymlink != 0 {
+					continue
+				}
 				if i >= 200 {
 					break
 				}
@@ -74,8 +79,7 @@ func listFilesTool() Definition {
 
 func grepFilesTool() Definition {
 	return Definition{
-		Name:        "grep_files",
-		Description: "Search for text in files using ripgrep.",
+		Name: "grep_files", Description: "Search workspace text with a regular expression. Protected paths and symbolic links are excluded; results are bounded.",
 		InputSchema: objectSchema(map[string]any{"pattern": map[string]any{"type": "string"}, "path": map[string]any{"type": "string"}}, []string{"pattern"}),
 		Run: func(ctx context.Context, raw json.RawMessage, tc Context) Result {
 			var input struct {
@@ -85,24 +89,7 @@ func grepFilesTool() Definition {
 			if err := json.Unmarshal(raw, &input); err != nil {
 				return Error(err.Error())
 			}
-			args := []string{"-n", "--no-heading", input.Pattern}
-			if input.Path != "" {
-				target, err := workspace.Resolve(ctx, tc.CWD, input.Path, "search", tc.Permission)
-				if err != nil {
-					return Error(err.Error())
-				}
-				args = append(args, target)
-			} else {
-				args = append(args, ".")
-			}
-			cmd := exec.CommandContext(ctx, "rg", args...)
-			cmd.Dir = tc.CWD
-			output, _ := cmd.CombinedOutput()
-			text := strings.TrimSpace(string(output))
-			if text == "" {
-				text = "(no matches)"
-			}
-			return Success(text)
+			return searchWorkspace(ctx, tc, input.Pattern, defaultString(input.Path, "."))
 		},
 	}
 }
@@ -125,11 +112,6 @@ func readFileTool() Definition {
 			if err != nil {
 				return Error(err.Error())
 			}
-			bytes, err := os.ReadFile(target)
-			if err != nil {
-				return Error(err.Error())
-			}
-			content := string(bytes)
 			limit := input.Limit
 			if limit <= 0 {
 				limit = 8000
@@ -141,26 +123,32 @@ func readFileTool() Definition {
 			if offset < 0 {
 				offset = 0
 			}
-			if offset > len(content) {
-				offset = len(content)
+			access, err := workspace.Open(tc.CWD)
+			if err != nil {
+				return Error(err.Error())
 			}
-			end := offset + limit
-			if end > len(content) {
-				end = len(content)
+			defer access.Close()
+			chunk, total, err := access.ReadChunk(target, int64(offset), limit)
+			if err != nil {
+				return Error(err.Error())
 			}
+			if int64(offset) > total {
+				offset = int(total)
+			}
+			end := offset + len(chunk)
 			truncated := "no"
-			if end < len(content) {
+			if int64(end) < total {
 				truncated = "yes - call read_file again with offset " + strconv.Itoa(end)
 			}
 			header := strings.Join([]string{
 				"FILE: " + input.Path,
 				"OFFSET: " + strconv.Itoa(offset),
 				"END: " + strconv.Itoa(end),
-				"TOTAL_CHARS: " + strconv.Itoa(len(content)),
+				"TOTAL_CHARS: " + strconv.FormatInt(total, 10),
 				"TRUNCATED: " + truncated,
 				"",
 			}, "\n")
-			return Success(header + content[offset:end])
+			return Success(header + string(chunk))
 		},
 	}
 }
@@ -190,7 +178,7 @@ func reviewedWriteTool(name, description string) Definition {
 			if err != nil {
 				return Error(err.Error())
 			}
-			return fromReview(filereview.ApplyReviewedChange(ctx, tc.Permission, input.Path, target, input.Content))
+			return applyReviewedChange(ctx, tc, input.Path, target, input.Content)
 		},
 	}
 }
@@ -214,7 +202,12 @@ func editFileTool() Definition {
 			if err != nil {
 				return Error(err.Error())
 			}
-			bytes, err := os.ReadFile(target)
+			access, err := workspace.Open(tc.CWD)
+			if err != nil {
+				return Error(err.Error())
+			}
+			defer access.Close()
+			bytes, err := access.ReadFile(target, workspace.MaxFileBytes)
 			if err != nil {
 				return Error(err.Error())
 			}
@@ -226,7 +219,7 @@ func editFileTool() Definition {
 			if input.ReplaceAll {
 				next = strings.ReplaceAll(original, input.Search, input.Replace)
 			}
-			return fromReview(filereview.ApplyReviewedChange(ctx, tc.Permission, input.Path, target, next))
+			return applyReviewedChange(ctx, tc, input.Path, target, next)
 		},
 	}
 }
@@ -262,7 +255,12 @@ func patchFileTool() Definition {
 			if err != nil {
 				return Error(err.Error())
 			}
-			bytes, err := os.ReadFile(target)
+			access, err := workspace.Open(tc.CWD)
+			if err != nil {
+				return Error(err.Error())
+			}
+			defer access.Close()
+			bytes, err := access.ReadFile(target, workspace.MaxFileBytes)
 			if err != nil {
 				return Error(err.Error())
 			}
@@ -277,7 +275,7 @@ func patchFileTool() Definition {
 					content = strings.Replace(content, replacement.Search, replacement.Replace, 1)
 				}
 			}
-			result := fromReview(filereview.ApplyReviewedChange(ctx, tc.Permission, input.Path, target, content))
+			result := applyReviewedChange(ctx, tc, input.Path, target, content)
 			if !result.OK {
 				return result
 			}
@@ -289,12 +287,8 @@ func patchFileTool() Definition {
 func runCommandTool() Definition {
 	return Definition{
 		Name:        "run_command",
-		Description: "Run a common development command from an allowlist.",
-		InputSchema: objectSchema(map[string]any{
-			"command": map[string]any{"type": "string"},
-			"args":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-			"cwd":     map[string]any{"type": "string"},
-		}, []string{"command"}),
+		Description: "Run an explicitly approved executable with separate arguments in an isolated Linux Docker sandbox without network access. The workspace is a filtered disposable snapshot: command-created files and edits are temporary. Persist changes using reviewed file tools. Requires a preinstalled MY_CODE_SANDBOX_IMAGE; never executes on the host.",
+		InputSchema: objectSchema(map[string]any{"command": map[string]any{"type": "string"}, "args": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "cwd": map[string]any{"type": "string"}}, []string{"command"}),
 		Run: func(ctx context.Context, raw json.RawMessage, tc Context) Result {
 			var input struct {
 				Command string   `json:"command"`
@@ -304,43 +298,31 @@ func runCommandTool() Definition {
 			if err := json.Unmarshal(raw, &input); err != nil {
 				return Error(err.Error())
 			}
-			effectiveCWD := tc.CWD
-			if input.CWD != "" {
-				target, err := workspace.Resolve(ctx, tc.CWD, input.CWD, "list", tc.Permission)
-				if err != nil {
-					return Error(err.Error())
-				}
-				effectiveCWD = target
+			effectiveCWD, err := workspace.Resolve(ctx, tc.CWD, defaultString(input.CWD, "."), "command_cwd", tc.Permission)
+			if err != nil {
+				return Error(err.Error())
 			}
-			command := input.Command
-			args := input.Args
-			if looksLikeShellSnippet(command, args) {
-				args = []string{"-lc", command}
-				command = "bash"
-			} else if !allowedCommand(command) {
-				return Error("Command not allowed: " + command)
+			if tc.Permission == nil {
+				return Error("Command requires explicit approval; no permission manager is available")
 			}
-			if tc.Permission != nil {
-				if err := tc.Permission.EnsureCommand(ctx, command, args, effectiveCWD); err != nil {
-					return Error(err.Error())
-				}
+			if err := tc.Permission.EnsureCommand(ctx, input.Command, input.Args, effectiveCWD); err != nil {
+				return Error(err.Error())
 			}
 			cmdCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 			defer cancel()
-			cmd := exec.CommandContext(cmdCtx, command, args...)
-			cmd.Dir = effectiveCWD
-			var output bytes.Buffer
-			cmd.Stdout = &output
-			cmd.Stderr = &output
-			err := cmd.Run()
-			text := strings.TrimSpace(output.String())
+			cmd, cleanup, err := sandbox.Prepare(cmdCtx, sandbox.Options{Workspace: tc.CWD, CWD: effectiveCWD, Command: input.Command, Args: input.Args})
 			if err != nil {
-				if text == "" {
-					text = err.Error()
-				}
-				return Error(text)
+				return Error(err.Error())
 			}
-			return Success(text)
+			defer cleanup()
+			output := &sandbox.LimitedBuffer{Limit: sandbox.MaxOutputBytes}
+			cmd.Stdout, cmd.Stderr = output, output
+			err = cmd.Run()
+			text := strings.TrimSpace(output.String()) + "\n" + sandbox.SnapshotNotice
+			if err != nil {
+				return Error(err.Error() + "\n" + text)
+			}
+			return Success(strings.TrimSpace(text))
 		},
 	}
 }
@@ -384,26 +366,10 @@ func defaultString(value, fallback string) string {
 	return value
 }
 
-func allowedCommand(command string) bool {
-	allowed := map[string]bool{"pwd": true, "ls": true, "find": true, "rg": true, "cat": true, "echo": true, "env": true, "grep": true, "git": true, "npm": true, "node": true, "python3": true, "pytest": true, "bash": true, "sh": true, "bun": true, "sed": true, "head": true, "tail": true, "wc": true, "go": true}
-	return allowed[command]
-}
-
-func looksLikeShellSnippet(command string, args []string) bool {
-	if len(args) > 0 {
-		return false
-	}
-	return regexp.MustCompile(`[|&;<>()$` + "`" + `]`).MatchString(command)
-}
-
 func absPath(path string) string {
 	out, err := filepath.Abs(path)
 	if err != nil {
 		return path
 	}
 	return out
-}
-
-func fromReview(result filereview.Result) Result {
-	return Result{OK: result.OK, Output: result.Output}
 }

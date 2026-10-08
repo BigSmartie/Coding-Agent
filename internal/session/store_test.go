@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ssbsunshengbo/minicode-go/internal/message"
+	"github.com/BigSmartie/Coding-Agent/internal/message"
 )
 
 func TestStoreSaveLoadAndListSessions(t *testing.T) {

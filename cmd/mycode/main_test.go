@@ -5,8 +5,11 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/BigSmartie/Coding-Agent/internal/testutil"
 )
 
 func TestUsageContainsManagementCommands(t *testing.T) {
@@ -35,10 +38,12 @@ func TestParseStartupArgsResume(t *testing.T) {
 
 func TestRunWithoutRuntimeConfigDoesNotImplicitlyUseMock(t *testing.T) {
 	home := t.TempDir()
+	testutil.IsolateEnv(t, home)
 	t.Setenv("HOME", home)
-	t.Setenv("MINI_CODE_MODEL_MODE", "")
-	t.Setenv("MINI_CODE_PROVIDER", "")
-	t.Setenv("MINI_CODE_MODEL", "")
+	t.Setenv("MY_CODE_HOME", filepath.Join(home, ".my-code"))
+	t.Setenv("MY_CODE_MODEL_MODE", "")
+	t.Setenv("MY_CODE_PROVIDER", "")
+	t.Setenv("MY_CODE_MODEL", "")
 	t.Setenv("ANTHROPIC_MODEL", "")
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
 	t.Setenv("ANTHROPIC_API_KEY", "")
@@ -74,7 +79,7 @@ func TestRunWithoutRuntimeConfigDoesNotImplicitlyUseMock(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "model: not-configured") || strings.Contains(got, "Mock mode response") || !strings.Contains(got, "请求失败: No model configured") {
+	if !strings.Contains(got, "model: not-configured") || strings.Contains(got, "Mock mode response") || !strings.Contains(got, "request failed: No model configured") {
 		t.Fatalf("unexpected no-config behavior:\n%s", got)
 	}
 }

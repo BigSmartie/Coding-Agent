@@ -1,159 +1,65 @@
-# MiniCode 路线图
+# MyCode 路线图
 
-MiniCode 当前已经具备一个可用的轻量终端 coding workflow，但和一个更完整的类 Claude Code runtime 相比，`main` 分支仍然存在一些明显缺口。
+MyCode 当前定位为早期 Alpha。P0 实现基线已经完成，具体测试证据和仍需原生
+环境验证的项目记录在 [P0_DEVELOPMENT.md](P0_DEVELOPMENT.md)，当前信任边界
+以 [SECURITY.md](SECURITY.md) 为准。
 
-这份路线图用于整理最有价值的缺失能力，以及它们更适合推进的优先级顺序。
+## P0：安全与可靠性基线
 
-也欢迎围绕这些方向提交 PR，前提是遵守贡献规范，并尽量保持项目轻量。
+P0 包含可构建的终端交互、系统凭据引用、凭据 origin 绑定、项目与 MCP 显式
+信任、文件修改 review、默认关闭的 Docker 命令执行、有限流式传输、重试与
+取消、多工具连续性，以及可恢复的会话快照。
 
-## P0
+P0 的命令与 MCP 工作区保持临时、断网。真实 provider 和系统凭据库测试需要
+用户凭据或对应平台服务，因此采用显式开启的验收方式。
 
-### 1. 模型感知的上下文管理
+## P1：长任务 Agent 运行时
 
-这是当前最重要的运行时缺口。
+P1 按依赖顺序开发。每个里程碑必须包含 RFC 与威胁模型、版本化数据协议、
+迁移和回滚、确定性夹具、race/故障/对抗测试、平台集成和文档更新。
 
-包括：
+### P1.1 事件日志、检查点与模型能力
 
-- 模型感知的 `context window` 配置
-- 基于供应商返回 usage 的 token 记账
-- TUI 中的上下文占用显示
-- 长会话中的自动上下文压缩
+- 为回合、审批、模型调用、工具调用和任务建立 append-only 类型化事件
+- 原子 checkpoint，崩溃恢复时不重复执行工具
+- Session schema 迁移和跨进程锁
+- 描述 context window、工具、reasoning、usage、cache 的 provider capability
 
-这部分直接决定长会话是否稳定，也是 MiniCode 当前和更完整 Claude Code 风格 runtime 差距最大的部分之一。
+### P1.2 上下文预算、压缩与分层记忆
 
-### 2. API retry 与 backoff
+- 请求前 token 预算和 provider usage 记账
+- 保持完整 tool-call/result 组的确定性压缩
+- 保护 Responses opaque state 和 Anthropic 签名
+- 受信任的全局、项目、嵌套与 include memory，限制循环和体积
 
-MiniCode 需要更稳地处理模型供应商侧的临时失败。
+### P1.3 持久任务、PTY 与后台 Job
 
-包括：
+- 压缩和重启后仍一致的结构化任务状态
+- 有界的 PTY/job start、attach、read、write、poll、cancel 与进程树清理
+- 将选定沙箱产物经 review 导回宿主工作区
 
-- 对 429 和 5xx 的重试
-- exponential backoff
-- 在可用时尊重 `Retry-After`
+### P1.4 受控网络、Provider 一致性与远程 MCP
 
-如果缺少这层能力，供应商侧抖动会过于直接地影响主交互闭环。
+- 默认拒绝、按精确 origin 授权并写审计事件的出口代理
+- SSRF、重定向、DNS rebinding、凭据 scope、流量与响应限额
+- Anthropic、OpenAI、网关和兼容 provider 共用一套 conformance suite
+- MCP capability 协商、分页、通知、取消和 Streamable HTTP
 
-### 3. 会话持久化与恢复
+### P1.5 子代理、评测与发布工程
 
-MiniCode 应该支持更可靠的 session save / resume。
+- 工具、路径、网络、并发和 token 预算更窄的受限子代理
+- 脱敏本地 trace 与可复现真实仓库任务评测
+- fuzz/故障测试、SBOM、校验和、可复现归档与签名发布
 
-包括：
+## P2：可选产品能力
 
-- 自动保存
-- 手动恢复
-- 基础的会话恢复能力
+- Notebook 编辑
+- MCP 与受控网络之外的内置 Web Search/Fetch
+- 更丰富的 IDE 集成
+- 高级 prompt caching 与成本优化
+- Docker 不可用时的原生 sandbox backend
 
-这对真实使用和长任务执行都很重要。
+## 贡献门槛
 
-### 4. 多语言实现分支
-
-另一个重要方向，是探索 MiniCode 的多语言实现版本，尤其包括：
-
-- Python
-- Go
-- Rust
-
-这对项目的“学习价值”很重要。
-
-目标并不是立刻把主代码库拆散，而是鼓励围绕同一套核心思路，逐步发展语言对应的分支或伴生实现：
-
-- 保持轻量架构
-- 与 Claude Code 的设计方向保持趋同
-- 保持 agent loop 和 tool model 的可读性
-- 让不同语言生态中的学习者也能从中受益
-
-如果你对维护或实现 Python、Go、Rust 版本感兴趣，也非常欢迎直接联系并参与贡献。
-
-## P1
-
-### 5. 分层 memory 加载
-
-MiniCode 应该支持一种轻量的分层 memory 体系，方向上接近 Claude Code 的 layered project context。
-
-可以包括：
-
-- 全局 memory
-- 项目级 memory
-- 嵌套目录 / 本地 memory
-- 在合适范围内支持简单 include
-
-### 6. 更完整的 provider abstraction
-
-MiniCode 当前已经能接 Anthropic 风格接口和部分兼容供应商，但 provider 模型还可以更明确、更完整。
-
-目标方向：
-
-- Anthropic
-- OpenAI-compatible endpoints
-- OpenRouter
-- LiteLLM-style gateways
-
-### 7. Todo / task tracking
-
-一个轻量内置任务跟踪工具会明显提升多步执行体验。
-
-但它应该保持轻量，不要演变成很重的 planning subsystem。
-
-### 8. `.claude/agents` 与 sub-agent 支持
-
-这是一个重要能力，但复杂度也会明显上升。
-
-更适合在核心 runtime 更稳定之后推进。
-
-### 9. 有选择地扩充核心工具集
-
-MiniCode 不需要机械追求和 Claude Code 一样的工具数量，但随着项目演进，当前这套最小工具集确实需要继续扩充。
-
-这里更合适的方向是：
-
-- 优先补足支撑核心 runtime 能力的工具
-- 优先借鉴与 Claude Code 趋同的工具模式，而不是发明完全无关的新工具体系
-- 保持内置工具集“小而硬”
-- 继续把很多外部或可选能力交给 MCP 承担
-
-优先考虑的工具类别包括：
-
-- session / memory 相关能力
-- context management 相关能力
-- 轻量任务跟踪能力
-- 少量 MCP 无法很好替代的高价值内置工具
-
-目标不是和 Claude Code 做工具数量对齐，而是在保持 MiniCode 轻量定位的前提下，逐步补强核心工具能力。
-
-## P2
-
-### 9. Notebook 编辑支持
-
-有价值，但不是当前 terminal coding workflow 的最核心缺口。
-
-### 10. 内置 web 工具
-
-MiniCode 现在已经可以通过 MCP 自我扩展，所以内置 `WebFetch` / `WebSearch` 有帮助，但不是最紧急的能力缺口。
-
-### 11. 评测与 trace 基建
-
-包括：
-
-- benchmark harness
-- 结构化 trace 捕获
-- 可复现 agent evaluation
-
-这对研究和比较非常有价值，但不属于主产品闭环的第一优先级。
-
-### 12. Prompt caching
-
-值得后续探索，尤其是在 context accounting 和 provider integration 更成熟之后。
-
-## 贡献说明
-
-如果你希望围绕这些方向提交 PR，请尽量：
-
-- 优先做聚焦型 PR
-- 保持实现轻量
-- 尽量与 Claude Code 的设计方向保持一致
-- 在 PR 中说明验证方式
-
-参见：
-
-- [中文贡献规范](./CONTRIBUTING_ZH.md)
-- [Contribution Guidelines](./CONTRIBUTING.md)
+优先提交聚焦且可验证的改动。任何改变文件、进程、凭据、网络、持久状态或
+模型可见信任边界的功能，都必须在同一改动中说明失败行为并加入安全测试。

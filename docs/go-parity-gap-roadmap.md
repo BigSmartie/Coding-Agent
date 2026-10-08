@@ -1,5 +1,8 @@
 # Go MiniCode Parity Gap Roadmap
 
+> Historical parity checklist. Current P0 evidence and future priorities are in
+> [../P0_DEVELOPMENT.md](../P0_DEVELOPMENT.md) and [../ROADMAP.md](../ROADMAP.md).
+
 This document tracks the remaining gaps between the TypeScript MiniCode implementation and the Go implementation.
 
 ## Phase 1: CLI Runtime Parity

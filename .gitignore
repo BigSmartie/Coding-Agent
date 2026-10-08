@@ -3,3 +3,5 @@ tmp/
 dist/
 .DS_Store
 *.log
+.my-code/
+.idea/

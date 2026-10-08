@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ssbsunshengbo/minicode-go/internal/message"
-	"github.com/ssbsunshengbo/minicode-go/internal/tools"
+	"github.com/BigSmartie/Coding-Agent/internal/message"
+	"github.com/BigSmartie/Coding-Agent/internal/tools"
 )
 
 type Args struct {
@@ -20,9 +20,19 @@ type Args struct {
 	OnToolResult      func(toolName string, output string, isError bool)
 	OnAssistant       func(content string)
 	OnProgressMessage func(content string)
+	OnUsage           func(message.TokenUsage)
+	OnTextDelta       func(string)
+	OnModelStart      func()
 }
 
 func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
+	if lifecycle, ok := args.Permission.(interface {
+		BeginTurn()
+		EndTurn()
+	}); ok {
+		lifecycle.BeginTurn()
+		defer lifecycle.EndTurn()
+	}
 	maxSteps := args.MaxSteps
 	if maxSteps <= 0 {
 		maxSteps = 80
@@ -39,9 +49,31 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 	}
 
 	for stepIndex := 0; stepIndex < maxSteps; stepIndex++ {
-		next, err := args.Model.Next(ctx, messages)
+		if err := ctx.Err(); err != nil {
+			return messages, err
+		}
+		if args.OnModelStart != nil {
+			args.OnModelStart()
+		}
+		var next message.Step
+		var err error
+		if streaming, ok := args.Model.(message.StreamingModel); ok && args.OnTextDelta != nil {
+			next, err = streaming.NextStream(ctx, messages, args.OnTextDelta)
+		} else {
+			next, err = args.Model.Next(ctx, messages)
+		}
 		if err != nil {
 			return messages, err
+		}
+		callUsage(args.OnUsage, next.Diagnostics.Usage)
+		if next.ProviderState != nil && len(next.ProviderState.Items) > 0 {
+			messages = append(messages, message.Message{Role: message.RoleProviderState, ProviderState: next.ProviderState})
+		}
+		projection := func(msg message.Message) message.Message {
+			if next.ProviderState != nil && len(next.ProviderState.Items) > 0 {
+				msg.MirrorProtocol = next.ProviderState.Protocol
+			}
+			return msg
 		}
 
 		switch next.Type {
@@ -50,7 +82,7 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 			isEmpty := content == ""
 			if !isEmpty && shouldTreatAssistantAsProgress(next.Kind, content, sawToolResult) {
 				callProgress(args.OnProgressMessage, content)
-				messages = append(messages, message.ProgressMessage(content))
+				messages = append(messages, projection(message.ProgressMessage(content)))
 				if sawToolResult && next.Kind != message.ContentProgress {
 					pushContinuation("Continue from your progress update. You have already used tools in this turn, so treat plain status text as progress, not a final answer. Respond with the next concrete tool call, code change, or an explicit <final> answer only if the task is truly complete.")
 				} else {
@@ -61,10 +93,10 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 
 			if isRecoverableThinkingStop(isEmpty, next.Diagnostics) && recoverableThinkingRetries < 3 {
 				recoverableThinkingRetries++
-				progress := "模型返回 pause_turn，正在继续请求后续步骤..."
+				progress := "Model returned pause_turn while thinking; continuing the request."
 				continuation := "Resume from the previous pause_turn and continue the task immediately. Produce the next concrete tool call, code change, or an explicit <final> answer only if the task is complete."
 				if next.Diagnostics.StopReason == "max_tokens" {
-					progress = "模型在 thinking 阶段触发 max_tokens，正在继续请求后续步骤..."
+					progress = "Model hit max_tokens while thinking; continuing the request."
 					continuation = "Your previous response hit max_tokens during thinking before producing the next actionable step. Resume immediately and continue with the next concrete tool call, code change, or an explicit <final> answer only if the task is complete. Do not repeat the earlier plan."
 				}
 				callProgress(args.OnProgressMessage, progress)
@@ -85,11 +117,11 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 
 			if isEmpty {
 				diagnosticsSuffix := formatDiagnostics(next.Diagnostics)
-				fallback := "模型返回空响应，已停止当前回合。请重试，或要求模型继续。"
+				fallback := "Model returned an empty response, so this turn has stopped. Try again or ask the model to continue."
 				if sawToolResult {
-					fallback = "工具执行后模型返回空响应，已停止当前回合。请重试，或要求模型继续完成剩余步骤。"
+					fallback = "Model returned an empty response after tool execution, so this turn has stopped. Try again or ask the model to finish the remaining steps."
 					if toolErrors > 0 {
-						fallback = "工具执行后模型返回空响应，已停止当前回合。最近有 " + strconv.Itoa(toolErrors) + " 个工具报错；请重试、调整命令，或让模型改用其他方案。"
+						fallback = "Model returned an empty response after tool execution, so this turn has stopped. Recent tool errors: " + strconv.Itoa(toolErrors) + ". Try again, adjust the command, or ask the model to use another approach."
 					}
 				}
 				fallback += diagnosticsSuffix
@@ -98,26 +130,44 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 			}
 
 			callAssistant(args.OnAssistant, content)
-			return append(messages, message.AssistantMessage(content)), nil
+			return append(messages, projection(message.AssistantMessage(content))), nil
 
 		case message.StepToolCalls:
 			if next.Content != "" && looksLikeClarifyingQuestion(next.Content) {
 				callAssistant(args.OnAssistant, next.Content)
-				return append(messages, message.AssistantMessage(next.Content)), nil
+				messages = append(messages, projection(message.AssistantMessage(next.Content)))
+				// A provider transcript must close every proposed tool call even when
+				// clarification causes us to defer execution.
+				if next.ProviderState != nil {
+					for _, call := range next.Calls {
+						messages = append(messages, projection(message.AssistantToolCallMessage(call)))
+					}
+					for _, call := range next.Calls {
+						messages = append(messages, message.ToolResultMessage(call.ID, call.ToolName, "Tool was not executed because the assistant requested user clarification.", true))
+					}
+				}
+				return messages, nil
 			}
 
 			if next.Content != "" {
 				if next.ContentKind == message.ContentProgress {
 					callProgress(args.OnProgressMessage, next.Content)
-					messages = append(messages, message.ProgressMessage(next.Content))
-					pushContinuation("Continue immediately from your <progress> update with concrete tool calls, code changes, or an explicit <final> answer only if the task is complete.")
+					messages = append(messages, projection(message.ProgressMessage(next.Content)))
 				} else {
 					callAssistant(args.OnAssistant, next.Content)
-					messages = append(messages, message.AssistantMessage(next.Content))
+					messages = append(messages, projection(message.AssistantMessage(next.Content)))
 				}
 			}
 
+			// All calls belong to a single assistant turn and must precede results.
 			for _, call := range next.Calls {
+				messages = append(messages, projection(message.AssistantToolCallMessage(call)))
+			}
+			for _, call := range next.Calls {
+				if ctx.Err() != nil {
+					messages = append(messages, message.ToolResultMessage(call.ID, call.ToolName, "Tool execution canceled.", true))
+					continue
+				}
 				callToolStart(args.OnToolStart, call.ToolName, call.Input)
 				result := args.Tools.Execute(ctx, call.ToolName, call.Input, tools.Context{
 					CWD:        args.CWD,
@@ -129,14 +179,16 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 				}
 				callToolResult(args.OnToolResult, call.ToolName, result.Output, !result.OK)
 				messages = append(messages,
-					message.AssistantToolCallMessage(call),
 					message.ToolResultMessage(call.ID, call.ToolName, result.Output, !result.OK),
 				)
+			}
+			if err := ctx.Err(); err != nil {
+				return messages, err
 			}
 		}
 	}
 
-	content := "达到最大工具步数限制，已停止当前回合。"
+	content := "Reached the maximum tool-step limit; this turn has stopped."
 	callAssistant(args.OnAssistant, content)
 	return append(messages, message.AssistantMessage(content)), nil
 }
@@ -165,7 +217,7 @@ func formatDiagnostics(diagnostics message.Diagnostics) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return " 诊断信息: " + strings.Join(parts, "; ") + "。"
+	return " Diagnostics: " + strings.Join(parts, "; ") + "."
 }
 
 func looksLikeClarifyingQuestion(content string) bool {
@@ -234,4 +286,14 @@ func callToolResult(fn func(string, string, bool), name, output string, isError 
 	if fn != nil {
 		fn(name, output, isError)
 	}
+}
+
+func callUsage(fn func(message.TokenUsage), usage message.TokenUsage) {
+	if fn == nil {
+		return
+	}
+	if usage.InputTokens == 0 && usage.OutputTokens == 0 && usage.TotalTokens == 0 {
+		return
+	}
+	fn(usage)
 }
