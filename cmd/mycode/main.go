@@ -6,9 +6,11 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 
 	"github.com/BigSmartie/Coding-Agent/internal/brand"
 	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/egress"
 	"github.com/BigSmartie/Coding-Agent/internal/manage"
 	"github.com/BigSmartie/Coding-Agent/internal/mcp"
 	"github.com/BigSmartie/Coding-Agent/internal/message"
@@ -79,9 +81,17 @@ func run(ctx context.Context, argv []string) error {
 	discoveredSkills, _ := skillStore.Discover(ctx)
 	toolRegistry := tools.Builtins(cwd, nil, skillStore)
 	servers := effectiveSettings.MCPServers
+	var journalRef atomic.Pointer[session.Journal]
 	mcpResult := mcp.CreateBackedTools(ctx, cwd, servers, mcp.Options{Authorize: func(name string, server config.MCPServerConfig) bool {
 		fingerprint, err := trust.MCPFingerprint(cwd, name, server)
 		return err == nil && trustStore.Allowed(cwd, "mcp:"+name, fingerprint)
+	}, NetworkAudit: func(event egress.Event) error {
+		current := journalRef.Load()
+		if current == nil {
+			return nil
+		}
+		_, err := current.Append(session.Event{Kind: session.EventKind("network_" + event.Phase), Origin: event.Origin, Method: event.Method, Status: event.Status, Bytes: event.Bytes})
+		return err
 	}})
 	definitions := append(toolRegistry.List(), mcpResult.Tools...)
 	toolRegistry = tools.NewRegistry(definitions, tools.Metadata{Skills: discoveredSkills, MCPServers: mcpResult.Servers}).WithDisposer(mcpResult.Dispose)
@@ -134,6 +144,8 @@ func run(ctx context.Context, argv []string) error {
 		return err
 	}
 	defer journal.Close()
+	journalRef.Store(journal)
+	defer journalRef.Store(nil)
 	if resuming {
 		record, err := store.Load(sessionID)
 		if err != nil {

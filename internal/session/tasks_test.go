@@ -114,3 +114,30 @@ func TestAsyncJobCompletionAfterCheckpointDoesNotBlockResume(t *testing.T) {
 		t.Fatalf("async job completion blocked resume: %#v, %v", loaded, err)
 	}
 }
+
+func TestNetworkAuditIsDurableAndRequiresEffectRecovery(t *testing.T) {
+	store := Store{Dir: t.TempDir()}
+	if err := store.Save(Record{ID: "session-1", Messages: []message.Message{message.UserMessage("before")}}); err != nil {
+		t.Fatal(err)
+	}
+	j, err := store.OpenJournal("session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.Append(Event{Kind: EventNetworkRequested, Origin: "https://api.example.com", Method: "POST"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.Append(Event{Kind: EventNetworkCompleted, Origin: "https://api.example.com", Method: "POST", Status: 200, Bytes: 42}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.Append(Event{Kind: EventNetworkRequested, Origin: "http://internal.invalid", Method: "GET"}); err == nil {
+		t.Fatal("invalid audit origin accepted")
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Load("session-1")
+	if err != nil || loaded.ResumeError == "" {
+		t.Fatalf("network effect did not block unsafe automatic resume: %#v, %v", loaded, err)
+	}
+}

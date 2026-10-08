@@ -332,6 +332,7 @@ func (s *Session) runAgentForTUI(ctx context.Context, input string, send func(tu
 		Permission:          s.args.Permission,
 		Tasks:               s.tasks,
 		Jobs:                s.jobs,
+		Network:             s.network,
 		OnEvent:             func(event agent.Event) error { return s.journalEvent(turnID, event) },
 		OnModelStart:        func() { send(tuiAgentEvent{kind: "model_start"}) },
 		OnTextDelta:         func(content string) { send(tuiAgentEvent{kind: "text_delta", content: safety.Redact(ctx, content)}) },
@@ -683,7 +684,7 @@ func (s *Session) runShortcutForTUI(ctx context.Context, input string, send func
 		return err
 	}
 	send(tuiAgentEvent{kind: "tool_start", toolName: call.ToolName, toolInput: call.Input})
-	result := s.args.Tools.Execute(ctx, call.ToolName, call.Input, tools.Context{CWD: s.args.CWD, Permission: s.args.Permission, Tasks: s.tasks, Jobs: s.jobs})
+	result := s.args.Tools.Execute(ctx, call.ToolName, call.Input, tools.Context{CWD: s.args.CWD, Permission: s.args.Permission, Tasks: s.tasks, Jobs: s.jobs, Network: s.network})
 	if err := s.journalEvent(turnID, agent.Event{Kind: string(EventToolCompleted), ToolName: call.ToolName}); err != nil {
 		return err
 	}

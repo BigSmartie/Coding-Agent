@@ -17,6 +17,7 @@ import (
 
 	"github.com/BigSmartie/Coding-Agent/internal/brand"
 	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/egress"
 	"github.com/BigSmartie/Coding-Agent/internal/safety"
 	"github.com/BigSmartie/Coding-Agent/internal/sandbox"
 	"github.com/BigSmartie/Coding-Agent/internal/tools"
@@ -26,7 +27,8 @@ const maxMessageBytes = 4 << 20
 const maxHeaderBytes = 8 << 10
 
 type Options struct {
-	Authorize func(string, config.MCPServerConfig) bool
+	Authorize    func(string, config.MCPServerConfig) bool
+	NetworkAudit func(egress.Event) error
 	// Prepare defaults to the isolated sandbox. Injection supports protocol tests.
 	Prepare func(context.Context, sandbox.Options) (*exec.Cmd, func(), error)
 }
@@ -97,22 +99,39 @@ type stdioClient struct {
 	stderrLines []string
 }
 
+type mcpClient interface {
+	start(context.Context) error
+	listTools(context.Context) ([]toolDescriptor, error)
+	listResources(context.Context) ([]resourceDescriptor, error)
+	listPrompts(context.Context) ([]promptDescriptor, error)
+	callTool(context.Context, string, any) tools.Result
+	readResource(context.Context, string) tools.Result
+	getPrompt(context.Context, string, map[string]string) tools.Result
+	close() error
+	protocolName() string
+	health() error
+}
+
 func CreateBackedTools(ctx context.Context, cwd string, servers map[string]config.MCPServerConfig, options ...Options) Result {
 	var opts Options
 	if len(options) > 0 {
 		opts = options[0]
 	}
-	clients := []*stdioClient{}
+	clients := []mcpClient{}
 	definitions := []tools.Definition{}
 	summaries := []tools.MCPServerSummary{}
 	resourceIndex := map[string]resourceEntry{}
 	promptIndex := map[string]promptEntry{}
 
 	for serverName, serverConfig := range servers {
+		serverTarget := serverConfig.Command
+		if serverConfig.URL != "" {
+			serverTarget = serverConfig.URL
+		}
 		if serverConfig.Enabled != nil && !*serverConfig.Enabled {
 			summaries = append(summaries, tools.MCPServerSummary{
 				Name:      serverName,
-				Command:   serverConfig.Command,
+				Command:   serverTarget,
 				Status:    "disabled",
 				ToolCount: 0,
 				Protocol:  configuredProtocol(serverConfig.Protocol),
@@ -121,26 +140,31 @@ func CreateBackedTools(ctx context.Context, cwd string, servers map[string]confi
 		}
 
 		if opts.Authorize == nil || !opts.Authorize(serverName, serverConfig) {
-			summaries = append(summaries, tools.MCPServerSummary{Name: serverName, Command: serverConfig.Command, Status: "untrusted", Error: "Review with mycode trust mcp <server> before enabling this configuration."})
+			summaries = append(summaries, tools.MCPServerSummary{Name: serverName, Command: serverTarget, Status: "untrusted", Error: "Review with mycode trust mcp <server> before enabling this configuration."})
 			continue
 		}
-		client := &stdioClient{serverName: serverName, config: serverConfig, cwd: cwd, prepare: opts.Prepare}
+		var client mcpClient
+		if serverConfig.URL != "" {
+			client = &remoteClient{serverName: serverName, config: serverConfig, audit: opts.NetworkAudit}
+		} else {
+			client = &stdioClient{serverName: serverName, config: serverConfig, cwd: cwd, prepare: opts.Prepare}
+		}
 		if err := client.start(ctx); err != nil {
 			_ = client.close()
 			summaries = append(summaries, tools.MCPServerSummary{
 				Name:      serverName,
-				Command:   serverConfig.Command,
+				Command:   serverTarget,
 				Status:    "error",
 				ToolCount: 0,
 				Error:     err.Error(),
-				Protocol:  configuredProtocol(serverConfig.Protocol),
+				Protocol:  client.protocolName(),
 			})
 			continue
 		}
 		descriptors, err := client.listTools(ctx)
 		if err != nil {
 			_ = client.close()
-			summaries = append(summaries, tools.MCPServerSummary{Name: serverName, Command: serverConfig.Command, Status: "error", Error: safety.Redact(ctx, err.Error()), Protocol: client.protocol})
+			summaries = append(summaries, tools.MCPServerSummary{Name: serverName, Command: serverTarget, Status: "error", Error: safety.Redact(ctx, err.Error()), Protocol: client.protocolName()})
 			continue
 		}
 		resources, err := client.listResources(ctx)
@@ -153,12 +177,10 @@ func CreateBackedTools(ctx context.Context, cwd string, servers map[string]confi
 		}
 		// Optional methods may be unsupported while the connection stays healthy.
 		// A timeout or transport failure instead invalidates every discovered tool.
-		client.mu.Lock()
-		connectionErr := client.readErr
-		client.mu.Unlock()
+		connectionErr := client.health()
 		if connectionErr != nil {
 			_ = client.close()
-			summaries = append(summaries, tools.MCPServerSummary{Name: serverName, Command: serverConfig.Command, Status: "error", Error: safety.Redact(ctx, connectionErr.Error()), Protocol: client.protocol})
+			summaries = append(summaries, tools.MCPServerSummary{Name: serverName, Command: serverTarget, Status: "error", Error: safety.Redact(ctx, connectionErr.Error()), Protocol: client.protocolName()})
 			continue
 		}
 		clients = append(clients, client)
@@ -176,9 +198,13 @@ func CreateBackedTools(ctx context.Context, cwd string, servers map[string]confi
 			if description == "" {
 				description = "Call MCP tool " + descriptor.Name + " from server " + serverName + "."
 			}
+			notice := sandbox.SnapshotNotice
+			if serverConfig.URL != "" {
+				notice = "Remote MCP call may change external state; review its operation approval."
+			}
 			definitions = append(definitions, tools.Definition{
 				Name:        wrappedName,
-				Description: description + " " + sandbox.SnapshotNotice,
+				Description: description + " " + notice,
 				InputSchema: normalizeInputSchema(descriptor.InputSchema),
 				Run: func(ctx context.Context, raw json.RawMessage, toolCtx tools.Context) tools.Result {
 					if err := authorizeCall(ctx, toolCtx, serverName, descriptor.Name, raw); err != nil {
@@ -195,10 +221,10 @@ func CreateBackedTools(ctx context.Context, cwd string, servers map[string]confi
 
 		summaries = append(summaries, tools.MCPServerSummary{
 			Name:          serverName,
-			Command:       serverConfig.Command,
+			Command:       serverTarget,
 			Status:        "connected",
 			ToolCount:     len(descriptors),
-			Protocol:      client.protocol,
+			Protocol:      client.protocolName(),
 			ResourceCount: len(resources),
 			PromptCount:   len(prompts),
 		})
@@ -220,6 +246,13 @@ func CreateBackedTools(ctx context.Context, cwd string, servers map[string]confi
 			return firstErr
 		},
 	}
+}
+
+func (c *stdioClient) protocolName() string { return c.protocol }
+func (c *stdioClient) health() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.readErr
 }
 
 func (c *stdioClient) start(ctx context.Context) error {
@@ -610,13 +643,13 @@ func readContentLengthMessage(reader io.Reader) ([]byte, error) {
 type resourceEntry struct {
 	serverName string
 	resource   resourceDescriptor
-	client     *stdioClient
+	client     mcpClient
 }
 
 type promptEntry struct {
 	serverName string
 	prompt     promptDescriptor
-	client     *stdioClient
+	client     mcpClient
 }
 
 func resourceTools(index map[string]resourceEntry) []tools.Definition {

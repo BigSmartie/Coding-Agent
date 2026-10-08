@@ -13,6 +13,7 @@ import (
 
 	"github.com/BigSmartie/Coding-Agent/internal/brand"
 	"github.com/BigSmartie/Coding-Agent/internal/credentials"
+	"github.com/BigSmartie/Coding-Agent/internal/egress"
 	"github.com/BigSmartie/Coding-Agent/internal/safety"
 	"github.com/BigSmartie/Coding-Agent/internal/workspace"
 )
@@ -29,6 +30,7 @@ type Settings struct {
 
 type MCPServerConfig struct {
 	Command  string         `json:"command"`
+	URL      string         `json:"url,omitempty"`
 	Args     []string       `json:"args,omitempty"`
 	Env      map[string]any `json:"env,omitempty"`
 	CWD      string         `json:"cwd,omitempty"`
@@ -232,10 +234,37 @@ func readMCPConfig(path, outsideWorkspace string) (map[string]MCPServerConfig, e
 	if parsed.MCPServers == nil {
 		return map[string]MCPServerConfig{}, nil
 	}
+	for name, server := range parsed.MCPServers {
+		if err := ValidateMCPServerConfig(server); err != nil {
+			return nil, fmt.Errorf("MCP server %q: %w", name, err)
+		}
+	}
 	return parsed.MCPServers, nil
 }
 
+func ValidateMCPServerConfig(server MCPServerConfig) error {
+	if server.URL == "" {
+		return nil
+	}
+	_, parsed, err := egress.Origin(server.URL)
+	if err != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("remote MCP URL must be HTTPS without credentials, query or fragment")
+	}
+	if server.Command != "" || len(server.Args) > 0 || len(server.Env) > 0 || server.CWD != "" {
+		return fmt.Errorf("remote MCP cannot combine URL with command, arguments, environment or cwd")
+	}
+	if server.Protocol != "" && server.Protocol != "auto" && server.Protocol != "streamable-http" {
+		return fmt.Errorf("remote MCP protocol must be streamable-http")
+	}
+	return nil
+}
+
 func SaveMCPConfig(path string, servers map[string]MCPServerConfig) error {
+	for name, server := range servers {
+		if err := ValidateMCPServerConfig(server); err != nil {
+			return fmt.Errorf("MCP server %q: %w", name, err)
+		}
+	}
 	if containsSecrets(Settings{MCPServers: servers}) {
 		return errors.New("plaintext MCP secrets cannot be saved; use server-managed OS credentials")
 	}
