@@ -133,3 +133,23 @@ func TestOutputBound(t *testing.T) {
 		t.Fatalf("unexpected bounded output %q", output)
 	}
 }
+
+func TestRetainedPTYPlanIsSessionBound(t *testing.T) {
+	cwd := t.TempDir()
+	argv, err := commandArgs(Options{Workspace: cwd, Command: "/bin/sh", RetainContainer: true, TTY: true, SessionID: "session-1"}, cwd, filepath.Join(t.TempDir(), "workspace"), "sha256:trusted", "mycode-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := "\n" + strings.Join(argv, "\n") + "\n"
+	for _, required := range []string{"\n--tty\n", "\n--label\nmycode.session=session-1\n"} {
+		if !strings.Contains(joined, required) {
+			t.Fatalf("missing job option %q", required)
+		}
+	}
+	if strings.Contains(joined, "\n--rm\n") {
+		t.Fatal("retained container was marked for automatic removal before export")
+	}
+	if _, err := commandArgs(Options{Workspace: cwd, Command: "/bin/sh", SessionID: "../outside"}, cwd, filepath.Join(t.TempDir(), "workspace"), "sha256:trusted", "mycode-test"); err == nil {
+		t.Fatal("invalid sandbox session label was accepted")
+	}
+}

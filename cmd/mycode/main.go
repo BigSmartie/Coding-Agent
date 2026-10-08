@@ -18,6 +18,7 @@ import (
 	"github.com/BigSmartie/Coding-Agent/internal/safety"
 	"github.com/BigSmartie/Coding-Agent/internal/session"
 	"github.com/BigSmartie/Coding-Agent/internal/skills"
+	"github.com/BigSmartie/Coding-Agent/internal/taskstate"
 	"github.com/BigSmartie/Coding-Agent/internal/terminal"
 	"github.com/BigSmartie/Coding-Agent/internal/tools"
 	"github.com/BigSmartie/Coding-Agent/internal/trust"
@@ -113,6 +114,7 @@ func run(ctx context.Context, argv []string) error {
 	sessionID := startup.ResumeID
 	resuming := sessionID != ""
 	messages := []message.Message{message.SystemMessage(systemPrompt)}
+	var sessionTasks []taskstate.Task
 	if sessionID == "latest" {
 		record, err := store.Latest()
 		if err != nil {
@@ -152,6 +154,7 @@ func run(ctx context.Context, argv []string) error {
 				messages = append(messages, msg)
 			}
 		}
+		sessionTasks = record.Tasks
 	}
 
 	app := session.New(session.Args{
@@ -165,7 +168,9 @@ func run(ctx context.Context, argv []string) error {
 		Store:      store,
 		SessionID:  sessionID,
 		Journal:    journal,
+		Tasks:      sessionTasks,
 	})
+	defer app.Close()
 	if startup.ForceTUI || (terminal.IsTerminal(os.Stdin) && terminal.IsTerminal(os.Stdout)) {
 		return app.RunTUI(ctx)
 	}

@@ -13,9 +13,11 @@ import (
 	"github.com/BigSmartie/Coding-Agent/internal/brand"
 	"github.com/BigSmartie/Coding-Agent/internal/commands"
 	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/jobs"
 	"github.com/BigSmartie/Coding-Agent/internal/message"
 	"github.com/BigSmartie/Coding-Agent/internal/model"
 	"github.com/BigSmartie/Coding-Agent/internal/safety"
+	"github.com/BigSmartie/Coding-Agent/internal/taskstate"
 	"github.com/BigSmartie/Coding-Agent/internal/tools"
 )
 
@@ -30,12 +32,15 @@ type Args struct {
 	Store      Store
 	SessionID  string
 	Journal    *Journal
+	Tasks      []taskstate.Task
 	In         io.Reader
 	Out        io.Writer
 }
 
 type Session struct {
 	args      Args
+	tasks     *TaskTracker
+	jobs      *jobs.Manager
 	ownsInput bool
 }
 
@@ -54,10 +59,20 @@ func New(args Args) *Session {
 		args.Out = os.Stdout
 	}
 	stdin, isFile := args.In.(*os.File)
-	return &Session{args: args, ownsInput: isFile && stdin == os.Stdin}
+	jobManager := jobs.New(args.CWD, args.SessionID, args.Permission, func(event jobs.Event) error {
+		if args.Journal == nil {
+			return nil
+		}
+		_, err := args.Journal.Append(Event{Kind: EventKind(event.Kind), JobID: event.JobID, ToolName: event.Command})
+		return err
+	})
+	return &Session{args: args, tasks: NewTaskTracker(args.Tasks, args.Journal, args.Store.Context), jobs: jobManager, ownsInput: isFile && stdin == os.Stdin}
 }
 
+func (s *Session) Close() { s.jobs.Close() }
+
 func (s *Session) Run(ctx context.Context) error {
+	defer s.Close()
 	scanner := bufio.NewScanner(s.args.In)
 	historyEntries, _ := s.args.History.Load()
 	for {
@@ -118,6 +133,18 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 	if input == "/tools" {
 		for _, tool := range s.args.Tools.List() {
 			fmt.Fprintf(s.args.Out, "%s: %s\n", tool.Name, tool.Description)
+		}
+		return nil
+	}
+	if input == "/tasks" {
+		for _, task := range s.tasks.ListTasks() {
+			fmt.Fprintf(s.args.Out, "%s [%s] %s\n", task.ID, task.Status, task.Title)
+		}
+		return nil
+	}
+	if input == "/jobs" {
+		for _, job := range s.jobs.List() {
+			fmt.Fprintf(s.args.Out, "%s [%s] exit=%d\n", job.ID, job.Status, job.ExitCode)
 		}
 		return nil
 	}
@@ -226,7 +253,7 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 		if err := s.journalEvent(turnID, agent.Event{Kind: string(EventToolStarted), ToolName: call.ToolName}); err != nil {
 			return err
 		}
-		result := s.args.Tools.Execute(ctx, call.ToolName, call.Input, tools.Context{CWD: s.args.CWD, Permission: s.args.Permission})
+		result := s.args.Tools.Execute(ctx, call.ToolName, call.Input, tools.Context{CWD: s.args.CWD, Permission: s.args.Permission, Tasks: s.tasks, Jobs: s.jobs})
 		if err := s.journalEvent(turnID, agent.Event{Kind: string(EventToolCompleted), ToolName: call.ToolName}); err != nil {
 			return err
 		}
@@ -269,6 +296,8 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 		CurrentUserPrompt:   input,
 		CWD:                 s.args.CWD,
 		Permission:          s.args.Permission,
+		Tasks:               s.tasks,
+		Jobs:                s.jobs,
 		OnEvent:             func(event agent.Event) error { return s.journalEvent(turnID, event) },
 		OnProgressMessage: func(content string) {
 			fmt.Fprintln(s.args.Out, "progress: "+content)
@@ -334,6 +363,7 @@ func (s *Session) persistMessages() error {
 		ID:       s.args.SessionID,
 		CWD:      s.args.CWD,
 		Messages: s.args.Messages,
+		Tasks:    s.tasks.ListTasks(),
 	})
 }
 
@@ -359,7 +389,7 @@ func (s *Session) finishTurn(turnID string, messages []message.Message, turnErr 
 		return nil
 	}
 	if s.args.Journal == nil {
-		return s.args.Store.Save(Record{ID: s.args.SessionID, CWD: s.args.CWD, Messages: messages})
+		return s.args.Store.Save(Record{ID: s.args.SessionID, CWD: s.args.CWD, Messages: messages, Tasks: s.tasks.ListTasks()})
 	}
 	kind := EventTurnCompleted
 	if turnErr != nil {
@@ -368,7 +398,7 @@ func (s *Session) finishTurn(turnID string, messages []message.Message, turnErr 
 	if _, err := s.args.Journal.Append(Event{Kind: kind, TurnID: turnID}); err != nil {
 		return err
 	}
-	record, err := s.args.Journal.AppendCheckpoint(Record{ID: s.args.SessionID, CWD: s.args.CWD, Messages: messages}, turnID)
+	record, err := s.args.Journal.AppendCheckpoint(Record{ID: s.args.SessionID, CWD: s.args.CWD, Messages: messages, Tasks: s.tasks.ListTasks()}, turnID)
 	if err != nil {
 		return err
 	}

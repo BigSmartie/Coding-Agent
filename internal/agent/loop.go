@@ -16,6 +16,8 @@ type Args struct {
 	Messages            []message.Message
 	CWD                 string
 	Permission          tools.PermissionManager
+	Tasks               tools.TaskManager
+	Jobs                tools.JobManager
 	MaxSteps            int
 	ContextWindowTokens int
 	MaxOutputTokens     int
@@ -217,6 +219,8 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 				result := args.Tools.Execute(ctx, call.ToolName, call.Input, tools.Context{
 					CWD:        args.CWD,
 					Permission: args.Permission,
+					Tasks:      args.Tasks,
+					Jobs:       args.Jobs,
 				})
 				sawToolResult = true
 				if !result.OK {

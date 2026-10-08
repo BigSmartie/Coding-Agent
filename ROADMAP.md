@@ -48,6 +48,10 @@ heuristic for arbitrary compatible gateways.
 
 ### P1.3 Durable tasks, PTY, and background jobs
 
+Implemented for local sessions with the Docker sandbox; see
+[RFC](docs/rfc/p1-3-durable-tasks-jobs.md). Jobs are canceled on process exit,
+while task state survives restart and context compaction.
+
 - structured task state that survives compaction and restart
 - bounded PTY/job start, attach, read, write, poll, cancel, and process-tree cleanup
 - explicit reviewed export of selected sandbox artifacts to the host workspace

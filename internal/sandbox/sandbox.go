@@ -4,12 +4,14 @@
 package sandbox
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -34,7 +36,10 @@ type Options struct {
 	Command   string
 	Args      []string
 	// Env is explicit server configuration. Host environment is never forwarded.
-	Env map[string]string
+	Env             map[string]string
+	TTY             bool
+	RetainContainer bool
+	SessionID       string
 }
 
 // Prepare returns a command ready for Run or Start and an idempotent cleanup.
@@ -145,7 +150,19 @@ func commandArgs(options Options, root, snapshot, image, name string) ([]string,
 	if strings.Contains(snapshot, ",") {
 		return nil, errors.New("sandbox temporary path cannot contain a comma")
 	}
-	args := []string{"run", "--rm", "--pull=never", "--name", name, "--interactive", "--network=none", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only", "--log-driver=none", "--pids-limit=128", "--memory=1g", "--cpus=2", "--user=65534:65534", "--tmpfs=/tmp:rw,nosuid,nodev,size=256m", "--tmpfs=/workspace:rw,nosuid,nodev,size=512m,mode=1777", "--mount", "type=bind,src=" + snapshot + ",dst=/input,readonly", "--workdir", "/workspace", "--env", "HOME=/tmp", "--env", "TMPDIR=/tmp", "--env", "PATH=/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin", "--env", "GOCACHE=/tmp/go-build", "--env", "GOTOOLCHAIN=local"}
+	args := []string{"run", "--pull=never", "--name", name, "--interactive", "--network=none", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only", "--log-driver=none", "--pids-limit=128", "--memory=1g", "--cpus=2", "--user=65534:65534", "--tmpfs=/tmp:rw,nosuid,nodev,size=256m", "--tmpfs=/workspace:rw,nosuid,nodev,size=512m,mode=1777", "--mount", "type=bind,src=" + snapshot + ",dst=/input,readonly", "--workdir", "/workspace", "--env", "HOME=/tmp", "--env", "TMPDIR=/tmp", "--env", "PATH=/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin", "--env", "GOCACHE=/tmp/go-build", "--env", "GOTOOLCHAIN=local"}
+	if !options.RetainContainer {
+		args = append(args, "--rm")
+	}
+	if options.TTY {
+		args = append(args, "--tty")
+	}
+	if options.SessionID != "" {
+		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`).MatchString(options.SessionID) {
+			return nil, errors.New("invalid sandbox session id")
+		}
+		args = append(args, "--label", "mycode.session="+options.SessionID)
+	}
 	keys := make([]string, 0, len(options.Env))
 	for key := range options.Env {
 		keys = append(keys, key)
@@ -167,6 +184,119 @@ func commandArgs(options Options, root, snapshot, image, name string) ([]string,
 	const bootstrap = `set -eu; cp -R /input/. /workspace/; cd "$1"; shift; exec "$@"`
 	args = append(args, "--entrypoint", "/bin/sh", image, "-c", bootstrap, "mycode-sandbox", path.Join("/workspace", filepath.ToSlash(relative)), options.Command)
 	return append(args, options.Args...), nil
+}
+
+// CleanupSessionContainers removes bounded, labelled containers left after an
+// unclean process exit. A session lock must be held by the caller.
+func CleanupSessionContainers(ctx context.Context, workspaceRoot, sessionID string) error {
+	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`).MatchString(sessionID) {
+		return fmt.Errorf("invalid sandbox session id")
+	}
+	docker, err := exec.LookPath("docker")
+	if errors.Is(err, exec.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	docker, err = filepath.Abs(docker)
+	if err != nil {
+		return err
+	}
+	root, err := workspace.Canonical(workspaceRoot)
+	if err != nil {
+		return err
+	}
+	if workspace.Within(root, docker) {
+		return fmt.Errorf("sandbox refuses a Docker executable inside the untrusted workspace")
+	}
+	cleanupCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	list := exec.CommandContext(cleanupCtx, docker, "ps", "-aq", "--filter", "label=mycode.session="+sessionID)
+	list.Env = HostEnvironment()
+	output := &LimitedBuffer{Limit: 4096}
+	list.Stdout, list.Stderr = output, output
+	if err := list.Run(); err != nil {
+		return fmt.Errorf("cannot inspect previous sandbox jobs: %w", err)
+	}
+	ids := strings.Fields(output.String())
+	if len(ids) > 32 {
+		return fmt.Errorf("too many previous sandbox containers")
+	}
+	for _, id := range ids {
+		if !regexp.MustCompile(`^[a-f0-9]{12,64}$`).MatchString(id) {
+			return fmt.Errorf("invalid previous sandbox container id")
+		}
+		remove := exec.CommandContext(cleanupCtx, docker, "rm", "--force", id)
+		remove.Env = HostEnvironment()
+		remove.Stdout, remove.Stderr = io.Discard, io.Discard
+		if err := remove.Run(); err != nil {
+			return fmt.Errorf("cannot remove previous sandbox container: %w", err)
+		}
+	}
+	return nil
+}
+
+// CopyArtifact reads one regular file from a retained sandbox container. It
+// never writes into the host workspace; callers must separately review/export.
+func CopyArtifact(ctx context.Context, prepared *exec.Cmd, relative string) ([]byte, error) {
+	if prepared == nil || strings.TrimSpace(relative) == "" || strings.ContainsAny(relative, "\\:\x00\r\n") || strings.HasPrefix(relative, "/") {
+		return nil, fmt.Errorf("artifact path must be relative to sandbox workspace")
+	}
+	clean := path.Clean(relative)
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || clean != relative {
+		return nil, fmt.Errorf("artifact path escapes sandbox workspace")
+	}
+	name := ""
+	for i, arg := range prepared.Args {
+		if arg == "--name" && i+1 < len(prepared.Args) {
+			name = prepared.Args[i+1]
+			break
+		}
+	}
+	if !regexp.MustCompile(`^mycode-[a-f0-9]{24}$`).MatchString(name) {
+		return nil, fmt.Errorf("invalid sandbox container identity")
+	}
+	copyCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(copyCtx, prepared.Path, "cp", name+":/workspace/"+clean, "-")
+	cmd.Env = HostEnvironment()
+	stderr := &LimitedBuffer{Limit: 4096}
+	cmd.Stderr = stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	reader := tar.NewReader(stdout)
+	header, err := reader.Next()
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("sandbox artifact is unavailable")
+	}
+	if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size < 0 || header.Size > 1<<20 {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("sandbox artifact must be a regular file no larger than 1 MiB")
+	}
+	data := make([]byte, header.Size)
+	if _, err := io.ReadFull(reader, data); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return nil, err
+	}
+	if _, err := reader.Next(); err != io.EOF {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("sandbox artifact copy contained additional entries")
+	}
+	if err := cmd.Wait(); err != nil {
+		return nil, fmt.Errorf("sandbox artifact copy failed: %w", err)
+	}
+	return data, nil
 }
 
 // HostEnvironment is deliberately small. It supports the installed Docker CLI

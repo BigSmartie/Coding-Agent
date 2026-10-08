@@ -10,11 +10,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/BigSmartie/Coding-Agent/internal/safety"
+	"github.com/BigSmartie/Coding-Agent/internal/taskstate"
 )
 
 // Journal events describe durable execution boundaries. Tool inputs and outputs
@@ -22,20 +24,29 @@ import (
 type EventKind string
 
 const (
-	EventTurnStarted       EventKind = "turn_started"
-	EventModelStarted      EventKind = "model_started"
-	EventModelCompleted    EventKind = "model_completed"
-	EventModelFailed       EventKind = "model_failed"
-	EventToolStarted       EventKind = "tool_started"
-	EventToolCompleted     EventKind = "tool_completed"
-	EventApprovalRequested EventKind = "approval_requested"
-	EventApprovalDecided   EventKind = "approval_decided"
-	EventTurnCompleted     EventKind = "turn_completed"
-	EventTurnFailed        EventKind = "turn_failed"
-	EventTurnAbandoned     EventKind = "turn_abandoned"
-	EventContextCompacted  EventKind = "context_compacted"
-	EventCheckpoint        EventKind = "checkpoint"
+	EventTurnStarted        EventKind = "turn_started"
+	EventModelStarted       EventKind = "model_started"
+	EventModelCompleted     EventKind = "model_completed"
+	EventModelFailed        EventKind = "model_failed"
+	EventToolStarted        EventKind = "tool_started"
+	EventToolCompleted      EventKind = "tool_completed"
+	EventApprovalRequested  EventKind = "approval_requested"
+	EventApprovalDecided    EventKind = "approval_decided"
+	EventTurnCompleted      EventKind = "turn_completed"
+	EventTurnFailed         EventKind = "turn_failed"
+	EventTurnAbandoned      EventKind = "turn_abandoned"
+	EventContextCompacted   EventKind = "context_compacted"
+	EventTaskUpdated        EventKind = "task_updated"
+	EventJobStarted         EventKind = "job_started"
+	EventJobCompleted       EventKind = "job_completed"
+	EventJobFailed          EventKind = "job_failed"
+	EventJobCanceled        EventKind = "job_canceled"
+	EventJobInput           EventKind = "job_input"
+	EventJobCancelRequested EventKind = "job_cancel_requested"
+	EventCheckpoint         EventKind = "checkpoint"
 )
+
+var jobIDPattern = regexp.MustCompile(`^[a-f0-9]{16}$`)
 
 const (
 	journalVersion = 1
@@ -45,18 +56,20 @@ const (
 )
 
 type Event struct {
-	SchemaVersion int       `json:"schemaVersion"`
-	Sequence      uint64    `json:"sequence"`
-	At            time.Time `json:"at"`
-	Kind          EventKind `json:"kind"`
-	TurnID        string    `json:"turnId,omitempty"`
-	CallID        string    `json:"callId,omitempty"`
-	ToolName      string    `json:"toolName,omitempty"`
-	Decision      string    `json:"decision,omitempty"`
-	Compacted     bool      `json:"compacted,omitempty"`
-	PrevHash      string    `json:"prevHash,omitempty"`
-	Hash          string    `json:"hash"`
-	Checkpoint    *Record   `json:"checkpoint,omitempty"`
+	SchemaVersion int             `json:"schemaVersion"`
+	Sequence      uint64          `json:"sequence"`
+	At            time.Time       `json:"at"`
+	Kind          EventKind       `json:"kind"`
+	TurnID        string          `json:"turnId,omitempty"`
+	CallID        string          `json:"callId,omitempty"`
+	JobID         string          `json:"jobId,omitempty"`
+	ToolName      string          `json:"toolName,omitempty"`
+	Decision      string          `json:"decision,omitempty"`
+	Compacted     bool            `json:"compacted,omitempty"`
+	PrevHash      string          `json:"prevHash,omitempty"`
+	Hash          string          `json:"hash"`
+	Checkpoint    *Record         `json:"checkpoint,omitempty"`
+	Task          *taskstate.Task `json:"task,omitempty"`
 }
 
 type Journal struct {
@@ -169,11 +182,33 @@ func (j *Journal) appendLocked(event Event) (uint64, error) {
 	if event.Compacted {
 		return 0, fmt.Errorf("compacted marker is reserved for journal replacement")
 	}
+	if isJobEvent(event.Kind) {
+		if !jobIDPattern.MatchString(event.JobID) {
+			return 0, fmt.Errorf("invalid journal job id")
+		}
+	} else if event.JobID != "" {
+		return 0, fmt.Errorf("unexpected job id in journal event")
+	}
+	if event.Kind == EventTaskUpdated {
+		if event.Task == nil {
+			return 0, fmt.Errorf("task update event has no task")
+		}
+		if err := taskstate.Validate(*event.Task); err != nil {
+			return 0, err
+		}
+		redacted := *event.Task
+		redacted.Title = safety.Redact(j.store.Context, redacted.Title)
+		redacted.Details = safety.Redact(j.store.Context, redacted.Details)
+		event.Task = &redacted
+	} else if event.Task != nil {
+		return 0, fmt.Errorf("unexpected task payload in journal event")
+	}
 	event.SchemaVersion = journalVersion
 	event.Sequence = j.seq + 1
 	event.At = time.Now().UTC()
 	event.TurnID = safety.Redact(j.store.Context, event.TurnID)
 	event.CallID = safety.Redact(j.store.Context, event.CallID)
+	event.JobID = safety.Redact(j.store.Context, event.JobID)
 	event.ToolName = safety.Redact(j.store.Context, event.ToolName)
 	event.Decision = safety.Redact(j.store.Context, event.Decision)
 	event.PrevHash = j.hash
@@ -244,7 +279,7 @@ func (j *Journal) RecoverInterrupted(acknowledgeEffects bool) (Record, error) {
 		if event.Sequence <= record.JournalSequence {
 			continue
 		}
-		if event.Kind == EventToolStarted || event.Kind == EventApprovalDecided {
+		if event.Kind == EventToolStarted || event.Kind == EventApprovalDecided || event.Kind == EventJobStarted || event.Kind == EventJobInput || event.Kind == EventJobCancelRequested {
 			effects = true
 		}
 	}
@@ -427,6 +462,23 @@ func readEvents(file *os.File, id string) ([]Event, int64, error) {
 		if event.Kind == EventCheckpoint && (event.Checkpoint == nil || event.Checkpoint.ID != id || event.Checkpoint.SchemaVersion != 2 || event.Checkpoint.JournalSequence != event.Sequence) {
 			return nil, 0, fmt.Errorf("invalid session journal checkpoint")
 		}
+		if event.Kind == EventCheckpoint && validateTasks(event.Checkpoint.Tasks) != nil {
+			return nil, 0, fmt.Errorf("invalid tasks in session checkpoint")
+		}
+		if event.Kind == EventTaskUpdated {
+			if event.Task == nil || taskstate.Validate(*event.Task) != nil {
+				return nil, 0, fmt.Errorf("invalid session task update")
+			}
+		} else if event.Task != nil {
+			return nil, 0, fmt.Errorf("unexpected task payload in session journal")
+		}
+		if isJobEvent(event.Kind) {
+			if !jobIDPattern.MatchString(event.JobID) {
+				return nil, 0, fmt.Errorf("invalid session job id")
+			}
+		} else if event.JobID != "" {
+			return nil, 0, fmt.Errorf("unexpected job id in session journal")
+		}
 		events = append(events, event)
 		previousHash = event.Hash
 		validBytes += int64(len(line))
@@ -464,7 +516,17 @@ func validEventKind(kind EventKind) bool {
 	switch kind {
 	case EventTurnStarted, EventModelStarted, EventModelCompleted, EventModelFailed,
 		EventToolStarted, EventToolCompleted, EventApprovalRequested, EventApprovalDecided,
-		EventTurnCompleted, EventTurnFailed, EventTurnAbandoned, EventContextCompacted, EventCheckpoint:
+		EventTurnCompleted, EventTurnFailed, EventTurnAbandoned, EventContextCompacted, EventTaskUpdated, EventCheckpoint,
+		EventJobStarted, EventJobCompleted, EventJobFailed, EventJobCanceled, EventJobInput, EventJobCancelRequested:
+		return true
+	default:
+		return false
+	}
+}
+
+func isJobEvent(kind EventKind) bool {
+	switch kind {
+	case EventJobStarted, EventJobCompleted, EventJobFailed, EventJobCanceled, EventJobInput, EventJobCancelRequested:
 		return true
 	default:
 		return false

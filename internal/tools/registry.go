@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/BigSmartie/Coding-Agent/internal/jobs"
 	"github.com/BigSmartie/Coding-Agent/internal/safety"
+	"github.com/BigSmartie/Coding-Agent/internal/taskstate"
 )
 
 type Result struct {
@@ -30,6 +32,23 @@ type PermissionManager interface {
 type Context struct {
 	CWD        string
 	Permission PermissionManager
+	Tasks      TaskManager
+	Jobs       JobManager
+}
+
+type TaskManager interface {
+	UpsertTask(context.Context, taskstate.Task) error
+	ListTasks() []taskstate.Task
+}
+
+type JobManager interface {
+	Start(context.Context, jobs.Spec) (jobs.Snapshot, error)
+	Poll(string) (jobs.Snapshot, error)
+	List() []jobs.Snapshot
+	Read(string, int64, int) (jobs.ReadResult, error)
+	Write(context.Context, string, string) error
+	Cancel(string) error
+	ReadArtifact(context.Context, string, string) ([]byte, error)
 }
 
 type Definition struct {

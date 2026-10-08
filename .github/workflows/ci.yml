@@ -54,4 +54,4 @@ jobs:
         env:
           MY_CODE_SANDBOX_IMAGE: mycode-sandbox-test
           MY_CODE_SANDBOX_INTEGRATION: '1'
-        run: go test -count=1 -timeout=3m ./internal/sandbox
+        run: go test -count=1 -timeout=3m ./internal/sandbox ./internal/jobs
