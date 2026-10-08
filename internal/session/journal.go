@@ -33,6 +33,7 @@ const (
 	EventTurnCompleted     EventKind = "turn_completed"
 	EventTurnFailed        EventKind = "turn_failed"
 	EventTurnAbandoned     EventKind = "turn_abandoned"
+	EventContextCompacted  EventKind = "context_compacted"
 	EventCheckpoint        EventKind = "checkpoint"
 )
 
@@ -463,7 +464,7 @@ func validEventKind(kind EventKind) bool {
 	switch kind {
 	case EventTurnStarted, EventModelStarted, EventModelCompleted, EventModelFailed,
 		EventToolStarted, EventToolCompleted, EventApprovalRequested, EventApprovalDecided,
-		EventTurnCompleted, EventTurnFailed, EventTurnAbandoned, EventCheckpoint:
+		EventTurnCompleted, EventTurnFailed, EventTurnAbandoned, EventContextCompacted, EventCheckpoint:
 		return true
 	default:
 		return false

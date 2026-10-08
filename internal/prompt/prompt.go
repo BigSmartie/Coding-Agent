@@ -2,6 +2,7 @@ package prompt
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -82,12 +83,17 @@ func Build(ctx context.Context, args Args) string {
 	if home == "" {
 		home, _ = os.UserHomeDir()
 	}
-	if content := maybeReadUser(args.CWD, filepath.Join(home, ".claude", "CLAUDE.md")); content != "" {
-		parts = append(parts, "Global instructions from ~/.claude/CLAUDE.md:\n"+content)
+	for _, source := range []struct{ path, label string }{
+		{filepath.Join(home, ".my-code", "MEMORY.md"), "Global memory from ~/.my-code/MEMORY.md"},
+		{filepath.Join(home, ".claude", "CLAUDE.md"), "Global instructions from ~/.claude/CLAUDE.md"},
+	} {
+		if content := maybeReadUser(args.CWD, source.path); content != "" {
+			parts = append(parts, source.label+":\n"+content)
+		}
 	}
 	if args.Project.ForWorkspace(args.CWD) {
-		for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
-			if content := args.Project.Content(name); content != "" {
+		for _, name := range []string{"AGENTS.md", "CLAUDE.md", "MEMORY.md", ".my-code/MEMORY.md"} {
+			if content, err := args.Project.Expand(name); err == nil && content != "" {
 				parts = append(parts, "Reviewed project instructions from "+name+":\n"+content)
 			}
 		}
@@ -102,9 +108,54 @@ func Build(ctx context.Context, args Args) string {
 }
 
 func maybeReadUser(cwd, path string) string {
-	bytes, err := trust.ReadUserFile(cwd, path, 256<<10)
+	root := filepath.Dir(path)
+	active := map[string]bool{}
+	files, total := 0, 0
+	var expand func(string, int) (string, error)
+	expand = func(name string, depth int) (string, error) {
+		if depth > 16 || active[name] || files >= 128 {
+			return "", fmt.Errorf("global memory include cycle or size limit")
+		}
+		active[name] = true
+		defer delete(active, name)
+		data, err := trust.ReadUserFile(cwd, name, 256<<10)
+		if err != nil {
+			return "", err
+		}
+		files++
+		total += len(data)
+		if total > 1<<20 {
+			return "", fmt.Errorf("global memory exceeds size limit")
+		}
+		var out strings.Builder
+		for _, line := range strings.SplitAfter(string(data), "\n") {
+			target, included, err := trust.IncludeTarget(strings.TrimSuffix(line, "\n"))
+			if err != nil {
+				return "", err
+			}
+			if !included {
+				out.WriteString(line)
+				continue
+			}
+			child := filepath.Clean(filepath.Join(filepath.Dir(name), filepath.FromSlash(target)))
+			rel, err := filepath.Rel(root, child)
+			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				return "", fmt.Errorf("global memory include escapes its root")
+			}
+			part, err := expand(child, depth+1)
+			if err != nil {
+				return "", err
+			}
+			out.WriteString("\nIncluded global memory from " + rel + ":\n" + part + "\n")
+			if out.Len() > 1<<20 {
+				return "", fmt.Errorf("expanded global memory exceeds size limit")
+			}
+		}
+		return out.String(), nil
+	}
+	content, err := expand(path, 0)
 	if err != nil {
 		return ""
 	}
-	return string(bytes)
+	return content
 }

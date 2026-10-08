@@ -180,3 +180,58 @@ func TestMCPConfigBoundToWorkspaceAndEnvironment(t *testing.T) {
 		t.Fatal("repository allowed to own trust store")
 	}
 }
+
+func TestReviewedProjectMemoryIncludesAreSnapshottedAndBounded(t *testing.T) {
+	cwd := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cwd, "notes"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cwd, "MEMORY.md"), []byte("Project rule\n@include notes/details.md\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(cwd, "notes", "details.md")
+	if err := os.WriteFile(nested, []byte("reviewed nested rule"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := Store{Dir: t.TempDir()}
+	hash, paths, err := WorkspaceFingerprint(cwd)
+	if err != nil || len(paths) != 2 {
+		t.Fatalf("included memory was not fingerprinted: %v, %#v", err, paths)
+	}
+	if err := store.Grant(cwd, "workspace", hash, hash); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := store.Workspace(cwd)
+	if err != nil || snapshot == nil {
+		t.Fatalf("reviewed snapshot missing: %v", err)
+	}
+	if err := os.WriteFile(nested, []byte("unreviewed replacement"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	expanded, err := snapshot.Expand("MEMORY.md")
+	if err != nil || !strings.Contains(expanded, "reviewed nested rule") || strings.Contains(expanded, "unreviewed replacement") {
+		t.Fatalf("snapshot expansion changed after approval: %q, %v", expanded, err)
+	}
+	if changed, err := store.Workspace(cwd); err != nil || changed != nil {
+		t.Fatalf("changed include retained trust: %#v, %v", changed, err)
+	}
+}
+
+func TestProjectMemoryRejectsCycleAndTraversal(t *testing.T) {
+	for _, body := range []string{"@include ../outside.md\n", "@include a.md\n"} {
+		t.Run(strings.TrimSpace(body), func(t *testing.T) {
+			cwd := t.TempDir()
+			if err := os.WriteFile(filepath.Join(cwd, "MEMORY.md"), []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(body, "a.md") {
+				if err := os.WriteFile(filepath.Join(cwd, "a.md"), []byte("@include MEMORY.md\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, _, err := WorkspaceFingerprint(cwd); err == nil {
+				t.Fatal("invalid include graph was accepted")
+			}
+		})
+	}
+}

@@ -101,6 +101,14 @@ Set `contextWindowTokens` in private user settings (or
 model's context limit is known; the app does not guess gateway limits. Project
 settings cannot override this value. `/status` shows the configured limit or
 `unknown`.
+When configured, the agent checks a request budget before each model call and
+compacts only at complete conversation/tool boundaries. If the current request
+cannot fit without losing part of it, the call stops with a budget error.
+Reviewed project memory may use `MEMORY.md` or `.my-code/MEMORY.md`; global
+memory may use `~/.my-code/MEMORY.md`. These files and the existing
+`AGENTS.md`/`CLAUDE.md` rules can include nested Markdown files with
+`@include relative/path.md`. Project includes are part of the workspace trust
+fingerprint, so changes require review again.
 
 An interrupted session can be reopened with `mycode --resume <id|latest>` if
 no tool or approval decision was reached. If a tool may have changed external

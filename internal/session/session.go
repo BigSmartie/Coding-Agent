@@ -261,12 +261,15 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 	}
 	messages := append(s.args.Messages, message.UserMessage(input))
 	next, err := agent.RunTurn(ctx, agent.Args{
-		Model:      s.args.Model,
-		Tools:      s.args.Tools,
-		Messages:   messages,
-		CWD:        s.args.CWD,
-		Permission: s.args.Permission,
-		OnEvent:    func(event agent.Event) error { return s.journalEvent(turnID, event) },
+		Model:               s.args.Model,
+		Tools:               s.args.Tools,
+		Messages:            messages,
+		ContextWindowTokens: s.contextWindowTokens(),
+		MaxOutputTokens:     s.maxOutputTokens(),
+		CurrentUserPrompt:   input,
+		CWD:                 s.args.CWD,
+		Permission:          s.args.Permission,
+		OnEvent:             func(event agent.Event) error { return s.journalEvent(turnID, event) },
 		OnProgressMessage: func(content string) {
 			fmt.Fprintln(s.args.Out, "progress: "+content)
 		},
@@ -294,6 +297,20 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 		}
 	}
 	return nil
+}
+
+func (s *Session) contextWindowTokens() int {
+	if s.args.Runtime == nil {
+		return 0
+	}
+	return s.args.Runtime.ContextWindowTokens
+}
+
+func (s *Session) maxOutputTokens() int {
+	if s.args.Runtime == nil {
+		return 0
+	}
+	return s.args.Runtime.MaxOutputTokens
 }
 
 type plainWriter struct {

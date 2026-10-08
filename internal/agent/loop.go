@@ -5,24 +5,28 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/BigSmartie/Coding-Agent/internal/budget"
 	"github.com/BigSmartie/Coding-Agent/internal/message"
 	"github.com/BigSmartie/Coding-Agent/internal/tools"
 )
 
 type Args struct {
-	Model             message.Model
-	Tools             *tools.Registry
-	Messages          []message.Message
-	CWD               string
-	Permission        tools.PermissionManager
-	MaxSteps          int
-	OnToolStart       func(toolName string, input any)
-	OnToolResult      func(toolName string, output string, isError bool)
-	OnAssistant       func(content string)
-	OnProgressMessage func(content string)
-	OnUsage           func(message.TokenUsage)
-	OnTextDelta       func(string)
-	OnModelStart      func()
+	Model               message.Model
+	Tools               *tools.Registry
+	Messages            []message.Message
+	CWD                 string
+	Permission          tools.PermissionManager
+	MaxSteps            int
+	ContextWindowTokens int
+	MaxOutputTokens     int
+	CurrentUserPrompt   string
+	OnToolStart         func(toolName string, input any)
+	OnToolResult        func(toolName string, output string, isError bool)
+	OnAssistant         func(content string)
+	OnProgressMessage   func(content string)
+	OnUsage             func(message.TokenUsage)
+	OnTextDelta         func(string)
+	OnModelStart        func()
 	// OnEvent is synchronous. A failed pre-execution event prevents the model or
 	// tool call, so the session cannot perform an unjournaled side effect.
 	OnEvent func(Event) error
@@ -52,6 +56,8 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 	recoverableThinkingRetries := 0
 	sawToolResult := false
 	toolErrors := 0
+	previousInputTokens := 0
+	previousRequestBytes := 0
 
 	pushContinuation := func(content string) {
 		messages = append(messages, message.UserMessage(content))
@@ -61,6 +67,24 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 		if err := ctx.Err(); err != nil {
 			return messages, err
 		}
+		prepared, err := budget.Prepare(messages, args.Tools, budget.Options{
+			ContextWindowTokens:  args.ContextWindowTokens,
+			MaxOutputTokens:      args.MaxOutputTokens,
+			PreviousInputTokens:  previousInputTokens,
+			PreviousRequestBytes: previousRequestBytes,
+			CurrentUserPrompt:    args.CurrentUserPrompt,
+		})
+		if err != nil {
+			return messages, err
+		}
+		if prepared.Compacted {
+			if err := callEvent(args.OnEvent, Event{Kind: "context_compacted"}); err != nil {
+				return messages, err
+			}
+			messages = prepared.Messages
+			previousInputTokens = 0
+		}
+		previousRequestBytes = prepared.RequestBytes
 		if err := callEvent(args.OnEvent, Event{Kind: "model_started"}); err != nil {
 			return messages, err
 		}
@@ -68,7 +92,6 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 			args.OnModelStart()
 		}
 		var next message.Step
-		var err error
 		if streaming, ok := args.Model.(message.StreamingModel); ok && args.OnTextDelta != nil {
 			next, err = streaming.NextStream(ctx, messages, args.OnTextDelta)
 		} else {
@@ -84,6 +107,7 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 			return messages, err
 		}
 		callUsage(args.OnUsage, next.Diagnostics.Usage)
+		previousInputTokens = next.Diagnostics.Usage.InputTokens
 		if next.ProviderState != nil && len(next.ProviderState.Items) > 0 {
 			messages = append(messages, message.Message{Role: message.RoleProviderState, ProviderState: next.ProviderState})
 		}

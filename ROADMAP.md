@@ -37,6 +37,10 @@ capability metadata. Job lifecycle events join the same journal in P1.3.
 
 ### P1.2 Context budgeting, compaction, and layered memory
 
+Implemented for explicitly configured context windows and local sessions; see
+[RFC](docs/rfc/p1-2-context-memory.md). Provider token estimates remain
+heuristic for arbitrary compatible gateways.
+
 - request-time token budgeting with provider-reported usage
 - deterministic compaction that preserves complete tool-call/result groups
 - protection for opaque Responses state and Anthropic signatures
