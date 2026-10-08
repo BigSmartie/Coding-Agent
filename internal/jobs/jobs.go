@@ -59,20 +59,21 @@ type ReadResult struct {
 }
 
 type job struct {
-	mu       sync.Mutex
-	inputMu  sync.Mutex
-	id       string
-	status   string
-	tty      bool
-	started  time.Time
-	finished time.Time
-	exitCode int
-	cmd      *exec.Cmd
-	stdin    io.WriteCloser
-	cancel   context.CancelFunc
-	cleanup  func()
-	done     chan struct{}
-	output   outputBuffer
+	mu            sync.Mutex
+	inputMu       sync.Mutex
+	id            string
+	status        string
+	tty           bool
+	started       time.Time
+	finished      time.Time
+	exitCode      int
+	quotaExceeded bool
+	cmd           *exec.Cmd
+	stdin         io.WriteCloser
+	cancel        context.CancelFunc
+	cleanup       func()
+	done          chan struct{}
+	output        outputBuffer
 }
 
 type Manager struct {
@@ -181,7 +182,28 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Snapshot, error) {
 	m.mu.Unlock()
 	reserved = false
 	go m.wait(j, stdout, stderr, jobCtx)
+	go m.monitorScratch(j)
 	return j.snapshot(), nil
+}
+
+func (m *Manager) monitorScratch(j *job) {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-j.done:
+			return
+		case <-ticker.C:
+			if err := sandbox.CheckJobScratchBounds(j.cmd); err != nil {
+				j.mu.Lock()
+				j.quotaExceeded = true
+				j.mu.Unlock()
+				_, _ = io.WriteString(&j.output, "\n[job scratch limit: "+err.Error()+"]\n")
+				j.cancel()
+				return
+			}
+		}
+	}
 }
 
 func (m *Manager) wait(j *job, stdout, stderr io.ReadCloser, ctx context.Context) {
@@ -194,7 +216,9 @@ func (m *Manager) wait(j *job, stdout, stderr io.ReadCloser, ctx context.Context
 	_ = j.stdin.Close()
 	j.mu.Lock()
 	j.finished = time.Now().UTC()
-	if ctx.Err() != nil {
+	if j.quotaExceeded {
+		j.status = "failed"
+	} else if ctx.Err() != nil {
 		j.status = "canceled"
 	} else if err != nil {
 		j.status = "failed"

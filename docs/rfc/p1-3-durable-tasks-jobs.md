@@ -28,7 +28,11 @@ restoring a pre-P1.3 session backup or starting a new session.
 execution, and the same offline, non-root, read-only Docker sandbox. At most
 four jobs run concurrently, eight may exist in a session, and each is limited
 to ten minutes. Docker gets a session label and a retained container for
-successful artifact export. `job_attach`/`job_read` return offsets in a 1 MiB
+successful artifact export. Retained jobs use an isolated private-parent host
+scratch mount because Docker drops tmpfs contents when a container exits; an
+fsize limit and periodic 512 MiB / 25,000-entry scan cancel runaway writes.
+The scan is a soft aggregate quota, so rapid writes can briefly exceed it.
+`job_attach`/`job_read` return offsets in a 1 MiB
 output tail; `job_poll`, `job_list`, `job_write` and `job_cancel` expose bounded
 status and control. Input writes are limited to 4096 bytes. Optional `tty`
 allocates a container PTY. Session exit and cancellation stop the container
@@ -36,7 +40,8 @@ process tree and remove its snapshot and container. No job is left running as
 an unattended host process.
 
 `job_export` accepts one relative sandbox path after successful completion.
-The Docker archive must contain exactly one regular file no larger than 1 MiB.
+The scratch reader accepts exactly one regular file no larger than 1 MiB,
+refusing symlinks, hard links and paths outside the scratch mount.
 The file must be UTF-8 text without NUL bytes. The host destination is
 resolved with workspace protection, and a unified diff requires explicit edit
 approval before the file is written. A refused export leaves the host unchanged.
@@ -47,7 +52,7 @@ The underlying `CopyArtifact` API never writes the host workspace.
 Untrusted commands can attempt path traversal, symlink export, oversized
 output, long-lived child processes, and hostile terminal bytes. Docker remains
 the execution boundary; no network access or host credentials are supplied.
-Artifact path normalization, tar entry type/size checks, output and input
+Artifact path normalization, secure handle/size checks, output and input
 bounds, terminal escaping, path approvals and reviewed writes limit the data
 crossing back to the host. The cleanup path refuses a Docker executable found
 inside the untrusted workspace.

@@ -143,8 +143,11 @@ the offline tools, package caches and MCP server binaries you need, plus
 
 Commands run with no network, a non-root user, a read-only container root,
 limited resources and a filtered workspace snapshot mounted read-only at `/input`.
-The snapshot is copied into a 512 MiB memory-backed `/workspace`; `/tmp` is limited
-to 256 MiB, container memory to 1 GiB, and process count to 128. Container log
+The snapshot is copied into a 512 MiB memory-backed `/workspace` for foreground
+commands. Background jobs use a session-private temporary scratch mount so an
+artifact can be reviewed after the command exits; a per-file limit and periodic
+aggregate size scan cancel excessive writes. `/tmp` is limited to 256 MiB,
+container memory to 1 GiB, and process count to 128. Container log
 files are disabled, so output cannot fill Docker's host log storage. **Changes made by commands
 or MCP are temporary.** Use approved `write_file`, `edit_file`, `modify_file` and
 `patch_file` calls to persist source edits. Git metadata, app state, common secret
