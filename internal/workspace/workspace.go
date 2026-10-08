@@ -64,22 +64,26 @@ func Protected(path string) bool {
 }
 
 func Resolve(ctx context.Context, cwd, targetPath, intent string, permission Permission) (string, error) {
+	inputRoot, err := filepath.Abs(cwd)
+	if err != nil {
+		return "", err
+	}
 	root, err := Canonical(cwd)
 	if err != nil {
 		return "", err
 	}
 	lexical := targetPath
 	if !filepath.IsAbs(lexical) {
-		lexical = filepath.Join(root, lexical)
+		lexical = filepath.Join(inputRoot, lexical)
 	}
 	lexical, err = filepath.Abs(lexical)
 	if err != nil {
 		return "", err
 	}
-	if !Within(root, lexical) {
+	rel, err := lexicalRelative(inputRoot, root, lexical)
+	if err != nil {
 		return "", fmt.Errorf("path escapes workspace: %s", targetPath)
 	}
-	rel, _ := filepath.Rel(root, lexical)
 	if Protected(rel) {
 		return "", fmt.Errorf("protected workspace path: %s", targetPath)
 	}
@@ -102,6 +106,18 @@ func Resolve(ctx context.Context, cwd, targetPath, intent string, permission Per
 	return resolved, nil
 }
 
+// lexicalRelative accepts either spelling of the workspace root but never
+// resolves a child link. Canonical containment is still checked by Resolve.
+func lexicalRelative(inputRoot, canonicalRoot, target string) (string, error) {
+	if Within(inputRoot, target) {
+		return filepath.Rel(inputRoot, target)
+	}
+	if Within(canonicalRoot, target) {
+		return filepath.Rel(canonicalRoot, target)
+	}
+	return "", fmt.Errorf("path is outside workspace")
+}
+
 func Within(root, target string) bool {
 	relative, err := filepath.Rel(root, target)
 	return err == nil && (relative == "." || (relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)))
@@ -109,9 +125,16 @@ func Within(root, target string) bool {
 
 // Access keeps an os.Root handle so all operations remain inside the workspace
 // even if a directory or symlink is swapped after path approval.
-type Access struct{ root *os.Root }
+type Access struct {
+	root      *os.Root
+	inputRoot string
+}
 
 func Open(cwd string) (*Access, error) {
+	inputRoot, err := filepath.Abs(cwd)
+	if err != nil {
+		return nil, err
+	}
 	canonical, err := Canonical(cwd)
 	if err != nil {
 		return nil, err
@@ -120,19 +143,20 @@ func Open(cwd string) (*Access, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Access{root: root}, nil
+	return &Access{root: root, inputRoot: inputRoot}, nil
 }
 func (a *Access) Close() error { return a.root.Close() }
 func (a *Access) relative(path string) (string, error) {
 	if !filepath.IsAbs(path) {
-		path = filepath.Join(a.root.Name(), path)
+		path = filepath.Join(a.inputRoot, path)
 	}
-	if !Within(a.root.Name(), path) {
-		return "", fmt.Errorf("path escapes workspace: %s", path)
-	}
-	rel, err := filepath.Rel(a.root.Name(), path)
+	path, err := filepath.Abs(path)
 	if err != nil {
 		return "", err
+	}
+	rel, err := lexicalRelative(a.inputRoot, a.root.Name(), path)
+	if err != nil {
+		return "", fmt.Errorf("path escapes workspace: %s", path)
 	}
 	if Protected(rel) {
 		return "", fmt.Errorf("protected workspace path: %s", rel)

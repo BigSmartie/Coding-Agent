@@ -127,11 +127,18 @@ func commandArgs(options Options, root, snapshot, image, name string) ([]string,
 	if cwd == "" {
 		cwd = root
 	}
+	canonicalRoot, err := workspace.Canonical(root)
+	if err != nil {
+		return nil, err
+	}
 	target, err := workspace.Resolve(context.Background(), root, cwd, "command_cwd", nil)
 	if err != nil {
 		return nil, err
 	}
-	relative, err := filepath.Rel(root, target)
+	if !workspace.Within(canonicalRoot, target) {
+		return nil, errors.New("command cwd escapes workspace")
+	}
+	relative, err := filepath.Rel(canonicalRoot, target)
 	if err != nil {
 		return nil, err
 	}
