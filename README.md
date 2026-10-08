@@ -152,6 +152,12 @@ go run ./cmd/mycode mcp add fs -- npx server
 go run ./cmd/mycode skills list
 ```
 
+Sessions use a private append-only event journal and atomic checkpoints.
+After a crash, `--resume <id>` can replay a completed checkpoint without
+rerunning tools. If a turn stopped before its checkpoint, resume is refused
+because a tool may already have changed the workspace; review it and start a
+new session. See the [P1.1 journal RFC](docs/rfc/p1-1-session-journal.md).
+
 Interactive slash commands:
 
 ```text

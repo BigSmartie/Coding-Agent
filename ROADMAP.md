@@ -24,6 +24,13 @@ fixtures, race/fault/adversarial tests, platform integration, and updated docs.
 
 ### P1.1 Event journal, checkpoints, and model capabilities
 
+The first journal slice is implemented (see
+[RFC](docs/rfc/p1-1-session-journal.md)): durable execution events, an atomic
+replayable checkpoint, conservative interrupted-turn handling, schema-1 to
+schema-2 migration, and a cross-process session lock. P1.1 is **not complete**;
+model capability metadata, richer interrupted-turn recovery, and journal
+compaction remain.
+
 - append-only typed events for turns, approvals, model calls, tool calls, and jobs
 - atomic checkpoints and crash replay without duplicate tool execution
 - session schema migration and cross-process locking

@@ -82,6 +82,8 @@ Go 版不是把 TS 版逐行翻译一遍，而是在功能对齐的基础上往�
 
 - 支持 `Anthropic-compatible` 和 `OpenAI-compatible` 两类 provider
 - 支持完整会话持久化，包含 `sessions list`、`--resume latest`、`--resume <id>`
+- P1.1 已加入私有事件日志与原子检查点：崩溃后可恢复已完成的检查点；
+  如果工具轮次未完成，会拒绝自动恢复，需先检查工作区并开启新会话
 - 支持交互式和非交互式 `install-local`
 - TUI 与普通行模式双入口，适配不同终端环境
 

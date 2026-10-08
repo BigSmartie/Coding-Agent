@@ -111,8 +111,28 @@ func run(ctx context.Context, argv []string) error {
 
 	store := session.Store{Dir: config.SessionsDir(), Context: ctx}
 	sessionID := startup.ResumeID
+	resuming := sessionID != ""
 	messages := []message.Message{message.SystemMessage(systemPrompt)}
-	if sessionID != "" {
+	if sessionID == "latest" {
+		record, err := store.Latest()
+		if err != nil {
+			return err
+		}
+		sessionID = record.ID
+	}
+	if !resuming {
+		record := session.NewRecord(cwd, messages)
+		sessionID = record.ID
+		if err := store.Save(record); err != nil {
+			return err
+		}
+	}
+	journal, err := store.OpenJournal(sessionID)
+	if err != nil {
+		return err
+	}
+	defer journal.Close()
+	if resuming {
 		record, err := loadSessionRecord(store, sessionID)
 		if err != nil {
 			return err
@@ -128,9 +148,6 @@ func run(ctx context.Context, argv []string) error {
 				messages = append(messages, msg)
 			}
 		}
-	} else {
-		record := session.NewRecord(cwd, messages)
-		sessionID = record.ID
 	}
 
 	app := session.New(session.Args{
@@ -143,6 +160,7 @@ func run(ctx context.Context, argv []string) error {
 		History:    session.History{Path: config.HistoryPath()},
 		Store:      store,
 		SessionID:  sessionID,
+		Journal:    journal,
 	})
 	if startup.ForceTUI || (terminal.IsTerminal(os.Stdin) && terminal.IsTerminal(os.Stdout)) {
 		return app.RunTUI(ctx)
