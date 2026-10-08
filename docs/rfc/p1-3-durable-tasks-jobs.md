@@ -35,7 +35,9 @@ The scan is a soft aggregate quota, so rapid writes can briefly exceed it.
 `job_attach`/`job_read` return offsets in a 1 MiB
 output tail; `job_poll`, `job_list`, `job_write` and `job_cancel` expose bounded
 status and control. Input writes are limited to 4096 bytes. Optional `tty`
-allocates a container PTY. Session exit and cancellation stop the container
+allocates a container PTY through a host PTY on Unix. Native Windows currently
+returns an explicit unsupported error for `tty`; non-TTY jobs remain available.
+Session exit and cancellation stop the container
 process tree and remove its snapshot and container. No job is left running as
 an unattended host process.
 

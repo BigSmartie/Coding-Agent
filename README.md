@@ -121,7 +121,8 @@ The agent can update tasks with `task_update` and list them with `task_list`.
 `/jobs` shows background sandbox jobs. The agent can use `job_start`,
 `job_attach`/`job_read`, `job_poll`, `job_write`, `job_cancel`, and `job_list`.
 Background jobs have bounded runtime, concurrency, input and output. They are
-canceled when the session exits. A successfully completed job can export one
+canceled when the session exits. PTY mode requires a Unix host (or WSL on
+Windows); native Windows supports non-PTY jobs. A successfully completed job can export one
 UTF-8 text file (up to 1 MiB) through `job_export`; the destination change
 requires a reviewed diff and edit approval. See the
 [P1.3 jobs RFC](docs/rfc/p1-3-durable-tasks-jobs.md).

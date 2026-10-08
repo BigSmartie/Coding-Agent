@@ -14,6 +14,7 @@ import (
 
 	"github.com/BigSmartie/Coding-Agent/internal/sandbox"
 	"github.com/BigSmartie/Coding-Agent/internal/workspace"
+	"github.com/creack/pty"
 )
 
 const (
@@ -147,34 +148,57 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Snapshot, error) {
 		cancel()
 		return Snapshot{}, err
 	}
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		cancel()
-		cleanup()
-		return Snapshot{}, err
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		cancel()
-		cleanup()
-		return Snapshot{}, err
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		cancel()
-		cleanup()
-		return Snapshot{}, err
+	var stdin io.WriteCloser
+	var stdout, stderr io.ReadCloser
+	var slave io.Closer
+	if spec.TTY {
+		master, terminal, ptyErr := pty.Open()
+		if ptyErr != nil {
+			cancel()
+			cleanup()
+			return Snapshot{}, fmt.Errorf("host PTY is unavailable: %w", ptyErr)
+		}
+		stdin, stdout, slave = master, master, terminal
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = terminal, terminal, terminal
+	} else {
+		stdin, err = cmd.StdinPipe()
+		if err == nil {
+			stdout, err = cmd.StdoutPipe()
+		}
+		if err == nil {
+			stderr, err = cmd.StderrPipe()
+		}
+		if err != nil {
+			cancel()
+			cleanup()
+			return Snapshot{}, err
+		}
 	}
 	if err := m.emit(Event{Kind: "job_started", JobID: id, Command: spec.Command}); err != nil {
+		if slave != nil {
+			_ = slave.Close()
+		}
+		if spec.TTY {
+			_ = stdin.Close()
+		}
 		cancel()
 		cleanup()
 		return Snapshot{}, err
 	}
 	if err := cmd.Start(); err != nil {
+		if slave != nil {
+			_ = slave.Close()
+		}
+		if spec.TTY {
+			_ = stdin.Close()
+		}
 		_ = m.emit(Event{Kind: "job_failed", JobID: id})
 		cancel()
 		cleanup()
 		return Snapshot{}, err
+	}
+	if slave != nil {
+		_ = slave.Close()
 	}
 	j := &job{id: id, status: "running", tty: spec.TTY, started: time.Now().UTC(), exitCode: -1, cmd: cmd, stdin: stdin, cancel: cancel, cleanup: cleanup, done: make(chan struct{})}
 	m.mu.Lock()
@@ -208,9 +232,12 @@ func (m *Manager) monitorScratch(j *job) {
 
 func (m *Manager) wait(j *job, stdout, stderr io.ReadCloser, ctx context.Context) {
 	var readers sync.WaitGroup
-	readers.Add(2)
+	readers.Add(1)
 	go func() { defer readers.Done(); _, _ = io.Copy(&j.output, stdout) }()
-	go func() { defer readers.Done(); _, _ = io.Copy(&j.output, stderr) }()
+	if stderr != nil {
+		readers.Add(1)
+		go func() { defer readers.Done(); _, _ = io.Copy(&j.output, stderr) }()
+	}
 	readers.Wait()
 	err := j.cmd.Wait()
 	_ = j.stdin.Close()
