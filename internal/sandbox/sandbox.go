@@ -16,6 +16,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -41,6 +42,7 @@ type Options struct {
 	SessionID       string
 	scratch         string
 	jobRoot         string
+	guestTTY        bool
 }
 
 // Prepare returns a command ready for Run or Start and an idempotent cleanup.
@@ -89,6 +91,17 @@ func Prepare(ctx context.Context, options Options) (*exec.Cmd, func(), error) {
 	fields := strings.Fields(checkOutput.String())
 	if len(fields) != 2 || !regexp.MustCompile(`^sha256:[a-f0-9]{64}$`).MatchString(fields[0]) || fields[1] != "linux" {
 		return nil, nil, errors.New("sandbox requires a trusted local Linux container image")
+	}
+	options.guestTTY = options.TTY && runtime.GOOS == "windows"
+	if options.guestTTY {
+		probeCtx, probeCancel := context.WithTimeout(ctx, 10*time.Second)
+		probe := exec.CommandContext(probeCtx, docker, "run", "--pull=never", "--rm", "--network=none", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only", "--user=65534:65534", "--env", "PATH=/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin", "--entrypoint", "/bin/sh", fields[0], "-c", "command -v python3 >/dev/null")
+		probe.Env = HostEnvironment()
+		err = probe.Run()
+		probeCancel()
+		if err != nil {
+			return nil, nil, errors.New("Windows Docker PTY jobs require python3 in the trusted local image")
+		}
 	}
 	snapshot, err := makeSnapshot(ctx, root)
 	if err != nil {
@@ -147,6 +160,9 @@ func Prepare(ctx context.Context, options Options) (*exec.Cmd, func(), error) {
 	}
 	cmd := exec.CommandContext(ctx, docker, argv...)
 	cmd.Env = HostEnvironment()
+	if options.guestTTY {
+		cmd.Env = append(cmd.Env, dockerTTYEnv+"=1")
+	}
 	cmd.Cancel = func() error {
 		stop()
 		if cmd.Process != nil {
@@ -201,7 +217,7 @@ func commandArgs(options Options, root, snapshot, image, name string) ([]string,
 	if !options.RetainContainer {
 		args = append(args, "--rm")
 	}
-	if options.TTY {
+	if options.TTY && !options.guestTTY {
 		args = append(args, "--tty")
 	}
 	if options.SessionID != "" {
@@ -228,7 +244,12 @@ func commandArgs(options Options, root, snapshot, image, name string) ([]string,
 	}
 	// The bootstrap is fixed code. The chosen cwd, executable and each argument
 	// are positional parameters, never interpolated into shell source.
-	const bootstrap = `set -eu; cp -R /input/. /workspace/; cd "$1"; shift; exec "$@"`
+	bootstrap := `set -eu; cp -R /input/. /workspace/; cd "$1"; shift; exec "$@"`
+	if options.guestTTY {
+		// Docker Desktop on Windows has no host PTY; the trusted guest image
+		// allocates one and bridges it through Docker's ordinary stdin/stdout.
+		bootstrap = `set -eu; cp -R /input/. /workspace/; cd "$1"; shift; exec python3 -c 'import os,pty,sys; sys.exit(os.waitstatus_to_exitcode(pty.spawn(sys.argv[1:])))' "$@"`
+	}
 	args = append(args, "--entrypoint", "/bin/sh", image, "-c", bootstrap, "mycode-sandbox", path.Join("/workspace", filepath.ToSlash(relative)), options.Command)
 	return append(args, options.Args...), nil
 }

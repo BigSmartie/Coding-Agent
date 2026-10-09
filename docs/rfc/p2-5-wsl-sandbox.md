@@ -10,8 +10,8 @@ host if preflight fails. Only Linux executables installed in that distribution
 can run. A WSL1 distribution is refused. The backend works for foreground
 commands, stdio MCP, and background jobs with reviewed artifact export. PTY
 jobs additionally require `/usr/bin/python3` in the default WSL distribution.
-The PTY is allocated inside Bubblewrap; Windows Docker PTY jobs remain
-unsupported.
+The PTY is allocated inside Bubblewrap. Windows Docker PTY jobs use the same
+guest-side Python helper in a trusted container image with `python3` installed.
 
 ## Isolation and resource limits
 

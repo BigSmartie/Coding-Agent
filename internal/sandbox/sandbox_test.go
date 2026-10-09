@@ -156,6 +156,27 @@ func TestRetainedPTYPlanIsSessionBound(t *testing.T) {
 	}
 }
 
+func TestWindowsDockerGuestPTYPlanKeepsArgumentsSeparate(t *testing.T) {
+	cwd := t.TempDir()
+	argument := "hello'; touch /tmp/escaped; '"
+	argv, err := commandArgs(Options{Workspace: cwd, Command: "/bin/echo", Args: []string{argument}, TTY: true, guestTTY: true}, cwd, filepath.Join(t.TempDir(), "workspace"), "sha256:trusted", "mycode-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := "\n" + strings.Join(argv, "\n") + "\n"
+	if strings.Contains(joined, "\n--tty\n") || !strings.Contains(joined, "pty.spawn(sys.argv[1:])") || argv[len(argv)-1] != argument {
+		t.Fatal("guest PTY plan changed terminal mode or command arguments")
+	}
+	prepared := &exec.Cmd{Path: filepath.Join(t.TempDir(), "docker.exe"), Env: []string{dockerTTYEnv + "=1"}}
+	if !GuestTTY(prepared) {
+		t.Fatal("Docker guest PTY was not reported to the job transport")
+	}
+	prepared.Env = nil
+	if GuestTTY(prepared) {
+		t.Fatal("unmarked Docker command was treated as a guest PTY")
+	}
+}
+
 func TestJobArtifactUsesBoundedNoFollowScratch(t *testing.T) {
 	root, err := os.MkdirTemp("", "mycode-jobs-test-artifact-")
 	if err != nil {

@@ -63,7 +63,7 @@ func TestIntegrationBackgroundJobPTYCancelAndArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Write(context.Background(), interactive.ID, "echo pty-ready\nexit\n"); err != nil {
+	if err := m.Write(context.Background(), interactive.ID, "test -t 0 && echo pty-ready\nexit\n"); err != nil {
 		t.Fatal(err)
 	}
 	waitStatus(t, m, interactive.ID, "completed")
@@ -99,6 +99,18 @@ func TestIntegrationWSLGuestPTY(t *testing.T) {
 	read, err := m.Read(job.ID, 0, 4096)
 	if err != nil || !strings.Contains(read.Output, "tty-ready") || !strings.Contains(read.Output, "reply:hello") {
 		t.Fatalf("WSL guest PTY interaction failed: %#v, %v", read, err)
+	}
+	sustained, err := m.Start(context.Background(), Spec{Command: "/bin/sh", Args: []string{"-c", "sleep 5; printf retained > result.txt; echo job-complete"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, err := m.Poll(sustained.ID); err != nil || status.Status != "running" {
+		t.Fatalf("WSL job did not remain active: %#v, %v", status, err)
+	}
+	waitStatus(t, m, sustained.ID, "completed")
+	data, err := m.ReadArtifact(context.Background(), sustained.ID, "result.txt")
+	if err != nil || string(data) != "retained" {
+		t.Fatalf("WSL sustained job artifact missing: %q, %v", data, err)
 	}
 	long, err := m.Start(context.Background(), Spec{Command: "/bin/sh", Args: []string{"-c", "echo running; exec sleep 30"}, TTY: true})
 	if err != nil {

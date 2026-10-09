@@ -21,6 +21,7 @@ import (
 const (
 	wslScratchEnv = "MYCODE_WSL_SCRATCH"
 	wslTTYEnv     = "MYCODE_WSL_GUEST_TTY"
+	dockerTTYEnv  = "MYCODE_DOCKER_GUEST_TTY"
 )
 
 // prepareWSL uses WSL2 as a Windows-hosted Linux VM and Bubblewrap inside it.
@@ -235,14 +236,21 @@ func wslJobScratch(prepared *exec.Cmd) string {
 	return ""
 }
 
-// GuestTTY reports that a prepared WSL command creates its PTY inside the
+// GuestTTY reports that a prepared command creates its PTY inside the
 // isolated guest, so the Windows caller should connect ordinary pipes.
 func GuestTTY(prepared *exec.Cmd) bool {
-	if prepared == nil || !strings.EqualFold(filepath.Base(prepared.Path), "wsl.exe") {
+	if prepared == nil {
 		return false
 	}
+	base := filepath.Base(prepared.Path)
+	marker := ""
+	if strings.EqualFold(base, "wsl.exe") {
+		marker = wslTTYEnv + "=1"
+	} else if strings.EqualFold(base, "docker.exe") {
+		marker = dockerTTYEnv + "=1"
+	}
 	for _, item := range prepared.Env {
-		if item == wslTTYEnv+"=1" {
+		if marker != "" && item == marker {
 			return true
 		}
 	}
