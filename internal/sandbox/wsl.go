@@ -141,6 +141,10 @@ func wslBwrapArgs(options Options, root, snapshotPath, scratchPath string) ([]st
 	if !validWSLPath(snapshotPath) || (options.RetainContainer && !validWSLPath(scratchPath)) {
 		return nil, errors.New("invalid WSL sandbox mount path")
 	}
+	canonicalRoot, err := workspace.Canonical(root)
+	if err != nil {
+		return nil, err
+	}
 	if options.Command == "" || strings.HasPrefix(options.Command, "-") || strings.ContainsAny(options.Command, "\x00\r\n") {
 		return nil, errors.New("command must be an explicit executable; pass arguments separately")
 	}
@@ -154,16 +158,16 @@ func wslBwrapArgs(options Options, root, snapshotPath, scratchPath string) ([]st
 	}
 	cwd := options.CWD
 	if cwd == "" {
-		cwd = root
+		cwd = canonicalRoot
 	}
-	target, err := workspace.Resolve(context.Background(), root, cwd, "command_cwd", nil)
+	target, err := workspace.Resolve(context.Background(), canonicalRoot, cwd, "command_cwd", nil)
 	if err != nil {
 		return nil, err
 	}
-	if !workspace.Within(root, target) {
+	if !workspace.Within(canonicalRoot, target) {
 		return nil, errors.New("command cwd escapes workspace")
 	}
-	relative, err := filepath.Rel(root, target)
+	relative, err := filepath.Rel(canonicalRoot, target)
 	if err != nil {
 		return nil, err
 	}
