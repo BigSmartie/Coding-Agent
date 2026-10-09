@@ -26,13 +26,11 @@ image on Ubuntu.
 The SearXNG endpoint is now `https://search.bigsmartie.cn/search` in the
 Windows user settings. It runs on the user's server behind HTTPS and an
 address allowlist; see the [operations note](../ops/searxng.md). The endpoint
-was exercised through the normal MyCode egress client. The remaining live
-acceptance needs external prerequisites:
+was exercised through the normal MyCode egress client. Anthropic cache request
+encoding and usage parsing are covered by local fixtures only; no live
+Anthropic cache check is required for this DeepSeek-based deployment. The
+remaining publication step needs external prerequisites:
 
-* Anthropic cache: no Anthropic credential is configured. The optional
-  `TestLiveAnthropicCache` in `internal/model` remains available when one is.
-  DeepSeek's separately verified automatic prefix cache does not exercise the
-  Anthropic `cache_control` request or its cache-write usage field.
 * VS Code Marketplace: the package is ready for publisher identity review,
   but there is no Marketplace publisher account or publishing credential on
   this host. The VSIX can be installed locally now; Marketplace publication

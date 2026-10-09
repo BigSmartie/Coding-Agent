@@ -50,31 +50,31 @@ Each milestone's contract and failure behavior are in its linked
   limits rather than Docker cgroup limits.
 - The VS Code extension is delivered as source and can be packaged as a VSIX;
   it is not published in the Marketplace.
-- Live SearXNG search needs a user-configured endpoint. Live provider cache
-  hits and actual billing need user-owned credentials and are not CI checks.
-  Cost figures are estimates, not a spending cap or billing record.
+- Live SearXNG search needs a user-configured endpoint. The DeepSeek cache-hit
+  check uses the user's configured credential and is not run in CI. Cost
+  figures are estimates, not a spending cap or billing record.
 - P2 adds optional product breadth to an early Alpha. The P0/P1 security and
   reliability boundaries in [SECURITY.md](SECURITY.md) still apply.
 
 ## Optional live acceptance
 
-Two opt-in checks now exercise the real integrations without storing secrets in
-the repository. Run them from a shell where you have already supplied your own
-service configuration. Neither check is enabled in CI:
+Two opt-in checks exercise the real integrations without storing secrets in the
+repository. Run them from a shell with your service configuration. Neither
+check is enabled in CI:
 
 ```powershell
 $env:MY_CODE_LIVE_WEB_SEARCH = "1"
 $env:MY_CODE_WEB_SEARCH_ENDPOINT = "https://your-searxng.example/search"
 go test -run '^TestLiveSearXNGSearch$' -count=1 ./internal/tools
 
-$env:MY_CODE_LIVE_CACHE_CHECK = "1"
-$env:MY_CODE_SMOKE_MODEL = "your-anthropic-model"
-# Supply ANTHROPIC_API_KEY privately in this shell before running the check.
-go test -run '^TestLiveAnthropicCache$' -count=1 ./internal/model
+$env:MY_CODE_LIVE_DEEPSEEK_CACHE = "1"
+# Uses the existing OS-backed DeepSeek credential.
+go test -run '^TestLiveDeepSeekCache$' -count=1 ./internal/model
 ```
 
 The search check sends one fixed `OpenAI` query and requires a usable JSON
-result. The cache check sends the same long prompt twice and requires provider
-usage to show a cache write followed by a read; it incurs two API charges.
-Neither check can establish that the user's configured rates match provider
-billing. Keep credentials and private endpoint URLs out of issues and logs.
+result. The DeepSeek cache check sends the same long prompt twice and requires
+provider usage to show a new cache hit; it incurs two API charges. Anthropic
+cache behavior is covered by local fixtures only. Neither check can establish
+that the user's configured rates match provider billing. Keep credentials and
+private endpoint URLs out of issues and logs.

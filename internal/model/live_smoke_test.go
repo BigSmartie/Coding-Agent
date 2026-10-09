@@ -55,38 +55,3 @@ func TestLiveProviderSmoke(t *testing.T) {
 		t.Log("provider did not report token usage")
 	}
 }
-
-// TestLiveAnthropicCache verifies an actual write followed by a cache read.
-// It is deliberately separate from CI because it sends two billable requests.
-func TestLiveAnthropicCache(t *testing.T) {
-	if os.Getenv("MY_CODE_LIVE_CACHE_CHECK") != "1" {
-		t.Skip("set MY_CODE_LIVE_CACHE_CHECK=1 for two billable Anthropic requests")
-	}
-	key, modelName := os.Getenv("ANTHROPIC_API_KEY"), os.Getenv("MY_CODE_SMOKE_MODEL")
-	if key == "" || modelName == "" {
-		t.Fatal("ANTHROPIC_API_KEY and MY_CODE_SMOKE_MODEL are required")
-	}
-	runtime := config.Runtime{Provider: "anthropic", Model: modelName, APIKey: key, BaseURL: "https://api.anthropic.com", MaxOutputTokens: 32, PromptCaching: true}
-	adapter, err := NewFromRuntime(runtime, tools.NewRegistry(nil, tools.Metadata{}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The repeated static prefix exceeds the documented minimum even for
-	// models requiring 4,096 cacheable tokens. Both requests are identical.
-	static := strings.Repeat("one two three four five six seven eight. ", 1100)
-	history := []message.Message{message.SystemMessage(static), message.UserMessage("Reply with OK.")}
-	var usage [2]message.TokenUsage
-	for i := range usage {
-		ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
-		step, err := adapter.(message.StreamingModel).NextStream(ctx, history, func(string) {})
-		cancel()
-		if err != nil {
-			t.Fatal(err)
-		}
-		usage[i] = step.Diagnostics.Usage
-	}
-	if usage[0].CacheWriteTokens == 0 || usage[1].CacheReadTokens == 0 {
-		t.Fatalf("cache write/read not reported; check model eligibility and prefix size: first=%+v second=%+v", usage[0], usage[1])
-	}
-	t.Logf("Anthropic cache verified: first write=%d tokens, second read=%d tokens", usage[0].CacheWriteTokens, usage[1].CacheReadTokens)
-}

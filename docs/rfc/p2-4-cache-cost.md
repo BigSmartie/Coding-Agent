@@ -45,8 +45,8 @@ The settings are user-owned and validated before use. No pricing or cache
 content is written to session records, and resume does not reconstruct a past
 cost total. Disabling the setting restores the prior request shape. Fixtures
 cover opt-in request encoding, cached token separation, invalid rates and
-usage, project override denial, and cost display in plain and TUI modes. Live
-cache-hit and billing verification requires a user-owned provider account and
-is not part of CI. The opt-in `TestLiveAnthropicCache` sends two identical,
-billable requests with a long static prefix and requires provider-reported
-cache-write then cache-read tokens. It does not compare against an invoice.
+usage, project override denial, and cost display in plain and TUI modes. The
+opt-in DeepSeek cache check uses the configured credential and is excluded from
+CI. Anthropic request encoding and usage parsing are covered by local fixtures;
+no paid Anthropic cache test is maintained. Actual billing cannot be verified
+without the provider's billing record.
