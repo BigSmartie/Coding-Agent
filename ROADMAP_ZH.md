@@ -20,10 +20,9 @@ P1 按依赖顺序开发。每个里程碑必须包含 RFC 与威胁模型、版
 
 ### P1.1 事件日志、检查点与模型能力
 
-第一阶段事件日志已实现（参见 [RFC](docs/rfc/p1-1-session-journal.md)）：
-持久执行事件、可重放的原子检查点、中断轮次的保守处理、schema 1 到 2 的迁移，
-以及跨进程会话锁。**P1.1 尚未完成**；模型能力元数据、更完整的中断轮次
-恢复和日志压缩仍待开发。
+本阶段已实现（参见 [RFC](docs/rfc/p1-1-session-journal.md)）：持久执行事件、
+可重放的原子检查点、中断轮次的保守处理、schema 迁移、跨进程会话锁、
+有界日志压缩和模型能力元数据。
 
 - 为回合、审批、模型调用、工具调用和任务建立 append-only 类型化事件
 - 原子 checkpoint，崩溃恢复时不重复执行工具
@@ -32,6 +31,9 @@ P1 按依赖顺序开发。每个里程碑必须包含 RFC 与威胁模型、版
 
 ### P1.2 上下文预算、压缩与分层记忆
 
+已实现（参见 [RFC](docs/rfc/p1-2-context-memory.md)）。对任意兼容网关的
+token 估算仍是启发式结果。
+
 - 请求前 token 预算和 provider usage 记账
 - 保持完整 tool-call/result 组的确定性压缩
 - 保护 Responses opaque state 和 Anthropic 签名
@@ -39,11 +41,17 @@ P1 按依赖顺序开发。每个里程碑必须包含 RFC 与威胁模型、版
 
 ### P1.3 持久任务、PTY 与后台 Job
 
+已实现（参见 [RFC](docs/rfc/p1-3-durable-tasks-jobs.md)）。Job 在进程退出时
+取消，任务状态在重启与上下文压缩后保留。
+
 - 压缩和重启后仍一致的结构化任务状态
 - 有界的 PTY/job start、attach、read、write、poll、cancel 与进程树清理
 - 将选定沙箱产物经 review 导回宿主工作区
 
 ### P1.4 受控网络、Provider 一致性与远程 MCP
+
+已实现（参见 [RFC](docs/rfc/p1-4-controlled-network-mcp.md)）。网络出口和
+远程 MCP 操作默认拒绝；真实 Provider 验证需要用户凭据，因此单独启用。
 
 - 默认拒绝、按精确 origin 授权并写审计事件的出口代理
 - SSRF、重定向、DNS rebinding、凭据 scope、流量与响应限额
@@ -51,6 +59,10 @@ P1 按依赖顺序开发。每个里程碑必须包含 RFC 与威胁模型、版
 - MCP capability 协商、分页、通知、取消和 Streamable HTTP
 
 ### P1.5 子代理、评测与发布工程
+
+已实现（参见 [RFC](docs/rfc/p1-5-subagents-eval-release.md)）。评测在固定提交的
+临时快照运行；签名发布流程已定义并在本地演练，实际签名需由发布 tag
+触发 GitHub attestation 服务。
 
 - 工具、路径、网络、并发和 token 预算更窄的受限子代理
 - 脱敏本地 trace 与可复现真实仓库任务评测

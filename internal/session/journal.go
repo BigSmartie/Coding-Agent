@@ -47,10 +47,14 @@ const (
 	EventNetworkRequested   EventKind = "network_requested"
 	EventNetworkCompleted   EventKind = "network_completed"
 	EventNetworkFailed      EventKind = "network_failed"
+	EventSubagentStarted    EventKind = "subagent_started"
+	EventSubagentCompleted  EventKind = "subagent_completed"
+	EventSubagentFailed     EventKind = "subagent_failed"
 	EventCheckpoint         EventKind = "checkpoint"
 )
 
 var jobIDPattern = regexp.MustCompile(`^[a-f0-9]{16}$`)
+var subagentIDPattern = regexp.MustCompile(`^sa-[0-9]{8}$`)
 
 const (
 	journalVersion = 1
@@ -67,6 +71,7 @@ type Event struct {
 	TurnID        string          `json:"turnId,omitempty"`
 	CallID        string          `json:"callId,omitempty"`
 	JobID         string          `json:"jobId,omitempty"`
+	SubagentID    string          `json:"subagentId,omitempty"`
 	Origin        string          `json:"origin,omitempty"`
 	Method        string          `json:"method,omitempty"`
 	Status        int             `json:"status,omitempty"`
@@ -197,6 +202,13 @@ func (j *Journal) appendLocked(event Event) (uint64, error) {
 	} else if event.JobID != "" {
 		return 0, fmt.Errorf("unexpected job id in journal event")
 	}
+	if isSubagentEvent(event.Kind) {
+		if !subagentIDPattern.MatchString(event.SubagentID) {
+			return 0, fmt.Errorf("invalid journal subagent id")
+		}
+	} else if event.SubagentID != "" {
+		return 0, fmt.Errorf("unexpected subagent id in journal event")
+	}
 	if isNetworkEvent(event.Kind) {
 		origin, _, err := egress.Origin(event.Origin)
 		if err != nil || origin != event.Origin || !validNetworkMethod(event.Method) || event.Bytes < 0 || event.Bytes > egress.MaxResponseBytes || event.Status < 0 || event.Status > 599 {
@@ -225,6 +237,7 @@ func (j *Journal) appendLocked(event Event) (uint64, error) {
 	event.TurnID = safety.Redact(j.store.Context, event.TurnID)
 	event.CallID = safety.Redact(j.store.Context, event.CallID)
 	event.JobID = safety.Redact(j.store.Context, event.JobID)
+	event.SubagentID = safety.Redact(j.store.Context, event.SubagentID)
 	if safety.Redact(j.store.Context, event.Origin) != event.Origin {
 		return 0, fmt.Errorf("network origin contains a secret")
 	}
@@ -498,6 +511,13 @@ func readEvents(file *os.File, id string) ([]Event, int64, error) {
 		} else if event.JobID != "" {
 			return nil, 0, fmt.Errorf("unexpected job id in session journal")
 		}
+		if isSubagentEvent(event.Kind) {
+			if !subagentIDPattern.MatchString(event.SubagentID) {
+				return nil, 0, fmt.Errorf("invalid session subagent id")
+			}
+		} else if event.SubagentID != "" {
+			return nil, 0, fmt.Errorf("unexpected subagent id in session journal")
+		}
 		if isNetworkEvent(event.Kind) {
 			origin, _, err := egress.Origin(event.Origin)
 			if err != nil || origin != event.Origin || !validNetworkMethod(event.Method) || event.Bytes < 0 || event.Bytes > egress.MaxResponseBytes || event.Status < 0 || event.Status > 599 {
@@ -545,7 +565,8 @@ func validEventKind(kind EventKind) bool {
 		EventToolStarted, EventToolCompleted, EventApprovalRequested, EventApprovalDecided,
 		EventTurnCompleted, EventTurnFailed, EventTurnAbandoned, EventContextCompacted, EventTaskUpdated, EventCheckpoint,
 		EventJobStarted, EventJobCompleted, EventJobFailed, EventJobCanceled, EventJobInput, EventJobCancelRequested,
-		EventNetworkRequested, EventNetworkCompleted, EventNetworkFailed:
+		EventNetworkRequested, EventNetworkCompleted, EventNetworkFailed,
+		EventSubagentStarted, EventSubagentCompleted, EventSubagentFailed:
 		return true
 	default:
 		return false
@@ -564,6 +585,15 @@ func isJobEvent(kind EventKind) bool {
 func isNetworkEvent(kind EventKind) bool {
 	switch kind {
 	case EventNetworkRequested, EventNetworkCompleted, EventNetworkFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+func isSubagentEvent(kind EventKind) bool {
+	switch kind {
+	case EventSubagentStarted, EventSubagentCompleted, EventSubagentFailed:
 		return true
 	default:
 		return false

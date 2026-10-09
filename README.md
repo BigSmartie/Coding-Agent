@@ -184,6 +184,9 @@ go run ./cmd/mycode mcp list
 go run ./cmd/mycode mcp add fs -- npx server
 go run ./cmd/mycode mcp add-url remote https://example.com/mcp
 go run ./cmd/mycode trust mcp remote
+
+# Evaluate a pinned repository task in a disposable snapshot (uses your configured model)
+go run ./cmd/mycode-eval -manifest task.json
 go run ./cmd/mycode skills list
 ```
 
