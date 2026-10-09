@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/cost"
 	"github.com/BigSmartie/Coding-Agent/internal/message"
 	"github.com/BigSmartie/Coding-Agent/internal/model"
 	"github.com/BigSmartie/Coding-Agent/internal/permissions"
@@ -16,6 +18,16 @@ import (
 )
 
 var tuiAnsiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func TestTUIReportsEstimatedRunCost(t *testing.T) {
+	s := New(Args{CWD: t.TempDir(), Tools: tools.NewRegistry(nil, tools.Metadata{}),
+		Runtime: &config.Runtime{Pricing: &cost.Prices{InputPerMillion: 10, OutputPerMillion: 20, CacheReadPerMillion: 1, CacheWritePerMillion: 12}}})
+	state := tuiState{status: "ready"}
+	s.applyTUIAgentEvent(&state, tuiAgentEvent{kind: "usage", usage: message.TokenUsage{InputTokens: 1000, OutputTokens: 100, CacheReadTokens: 400}})
+	if got := s.modelStatusWithCost(state); !strings.Contains(got, "est $0.008400 this run") {
+		t.Fatalf("cost status missing: %s", got)
+	}
+}
 
 func TestRenderTUIScreenIncludesTranscriptAndPrompt(t *testing.T) {
 	dir := t.TempDir()

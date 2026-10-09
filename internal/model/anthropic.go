@@ -244,6 +244,9 @@ func toAnthropicPayload(runtime config.Runtime, registry *tools.Registry, messag
 	if runtime.MaxOutputTokens > 0 {
 		payload["max_tokens"] = runtime.MaxOutputTokens
 	}
+	if runtime.PromptCaching {
+		payload["cache_control"] = map[string]any{"type": "ephemeral"}
+	}
 	return payload
 }
 

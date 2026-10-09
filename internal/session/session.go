@@ -13,6 +13,7 @@ import (
 	"github.com/BigSmartie/Coding-Agent/internal/brand"
 	"github.com/BigSmartie/Coding-Agent/internal/commands"
 	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/cost"
 	"github.com/BigSmartie/Coding-Agent/internal/egress"
 	"github.com/BigSmartie/Coding-Agent/internal/jobs"
 	"github.com/BigSmartie/Coding-Agent/internal/message"
@@ -299,6 +300,15 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 	if err != nil {
 		return err
 	}
+	var turnCost float64
+	var costReported, costUnknown bool
+	defer func() {
+		if costUnknown {
+			fmt.Fprintln(s.args.Out, "estimated cost: unavailable (inconsistent provider usage)")
+		} else if costReported {
+			fmt.Fprintf(s.args.Out, "estimated cost (this turn): $%.6f\n", turnCost)
+		}
+	}()
 	messages := append(s.args.Messages, message.UserMessage(input))
 	next, err := agent.RunTurn(ctx, agent.Args{
 		Model:               s.args.Model,
@@ -318,6 +328,18 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 		},
 		OnToolStart: func(name string, _ any) {
 			fmt.Fprintln(s.args.Out, "tool: "+name)
+		},
+		OnUsage: func(usage message.TokenUsage) {
+			if s.args.Runtime == nil || s.args.Runtime.Pricing == nil {
+				return
+			}
+			amount, err := cost.Estimate(usage, *s.args.Runtime.Pricing)
+			if err != nil {
+				costUnknown = true
+				return
+			}
+			turnCost += amount
+			costReported = true
 		},
 	})
 	if err != nil {

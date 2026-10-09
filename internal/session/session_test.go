@@ -10,10 +10,34 @@ import (
 	"testing"
 
 	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/cost"
 	"github.com/BigSmartie/Coding-Agent/internal/message"
 	"github.com/BigSmartie/Coding-Agent/internal/model"
 	"github.com/BigSmartie/Coding-Agent/internal/tools"
 )
+
+type pricedModel struct{}
+
+func (pricedModel) Next(context.Context, []message.Message) (message.Step, error) {
+	return message.AssistantStep("done", message.ContentFinal, message.Diagnostics{Usage: message.TokenUsage{
+		InputTokens: 1000, OutputTokens: 100, CacheReadTokens: 400,
+	}}), nil
+}
+
+func TestRunOnceReportsUserPricedTokenCost(t *testing.T) {
+	var out bytes.Buffer
+	s := New(Args{
+		CWD: t.TempDir(), Tools: tools.NewRegistry(nil, tools.Metadata{}), Model: pricedModel{},
+		Runtime:  &config.Runtime{Pricing: &cost.Prices{InputPerMillion: 10, OutputPerMillion: 20, CacheReadPerMillion: 1, CacheWritePerMillion: 12}},
+		Messages: []message.Message{message.SystemMessage("system")}, Out: &out,
+	})
+	if err := s.RunOnce(context.Background(), "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "estimated cost (this turn): $0.008400") {
+		t.Fatalf("cost estimate missing or double-counted cache: %s", out.String())
+	}
+}
 
 func TestRunOnceExecutesShortcut(t *testing.T) {
 	dir := t.TempDir()
