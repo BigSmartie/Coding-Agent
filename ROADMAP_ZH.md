@@ -70,6 +70,9 @@ token 估算仍是启发式结果。
 
 ## P2：可选产品能力
 
+以 Windows 为首要验收平台的 P2 范围已完成。验收证据与运行限制见
+[P2_DEVELOPMENT.md](P2_DEVELOPMENT.md)。
+
 - P2.1 经审查的 Jupyter Notebook 单元编辑：已实现，参见
   [RFC](docs/rfc/p2-1-notebook-editing.md)
 - P2.2 内置、逐 URL 审批的 Web Search/Fetch：已实现，参见
