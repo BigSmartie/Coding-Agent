@@ -84,7 +84,8 @@ attestation service.
   [RFC](docs/rfc/p2-1-notebook-editing.md)
 - P2.2 built-in, reviewed web search/fetch: implemented; see
   [RFC](docs/rfc/p2-2-web-tools.md)
-- richer IDE integrations
+- P2.3 VS Code workspace and active-file integration: implemented; see
+  [RFC](docs/rfc/p2-3-vscode-integration.md)
 - advanced prompt caching and cost optimization
 - native sandbox backends where Docker is unavailable
 

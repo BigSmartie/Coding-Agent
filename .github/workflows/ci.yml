@@ -36,6 +36,8 @@ jobs:
       - run: go vet ./...
       - run: go test -race -count=1 -timeout=5m ./...
       - run: go build -trimpath -o dist/ ./cmd/mycode
+      - name: Verify VS Code integration
+        run: node --test editors/vscode/context.test.js
 
   sandbox:
     runs-on: ubuntu-latest

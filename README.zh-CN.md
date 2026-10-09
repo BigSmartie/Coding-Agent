@@ -289,6 +289,10 @@ Notebook 的源代码单元，并在核对 SHA-256 和人工审查差异后修�
 不注册搜索工具；端点需支持 JSON 格式。网页正文与搜索摘要均为不可信内容。
 详见 [P2.2 RFC](docs/rfc/p2-2-web-tools.md)。
 
+可选的 [VS Code 扩展](editors/vscode/README.md)能在受信任工作区终端启动
+MyCode，并准备当前文件位置供用户检查后提交。详见
+[P2.3 RFC](docs/rfc/p2-3-vscode-integration.md)。
+
 ## 整体架构
 
 可以把 Go 版看成几层协作的运行时：

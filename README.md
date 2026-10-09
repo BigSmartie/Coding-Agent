@@ -175,6 +175,10 @@ the endpoint is configured; the endpoint must support SearXNG's JSON format.
 Page text and search snippets are untrusted. See the
 [P2.2 RFC](docs/rfc/p2-2-web-tools.md).
 
+The optional [VS Code extension](editors/vscode/README.md) opens MyCode in a
+trusted workspace terminal and prepares reviewed active-file context without
+submitting it. See the [P2.3 RFC](docs/rfc/p2-3-vscode-integration.md).
+
 Review project instructions and each MCP configuration before enabling them:
 
 ```text

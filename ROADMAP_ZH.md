@@ -74,7 +74,8 @@ token 估算仍是启发式结果。
   [RFC](docs/rfc/p2-1-notebook-editing.md)
 - P2.2 内置、逐 URL 审批的 Web Search/Fetch：已实现，参见
   [RFC](docs/rfc/p2-2-web-tools.md)
-- 更丰富的 IDE 集成
+- P2.3 VS Code 工作区与当前文件集成：已实现，参见
+  [RFC](docs/rfc/p2-3-vscode-integration.md)
 - 高级 prompt caching 与成本优化
 - Docker 不可用时的原生 sandbox backend
 
