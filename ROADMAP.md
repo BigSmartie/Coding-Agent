@@ -82,7 +82,8 @@ attestation service.
 
 - P2.1 reviewed Jupyter notebook cell editing: implemented; see
   [RFC](docs/rfc/p2-1-notebook-editing.md)
-- built-in web search/fetch beyond MCP and controlled network profiles
+- P2.2 built-in, reviewed web search/fetch: implemented; see
+  [RFC](docs/rfc/p2-2-web-tools.md)
 - richer IDE integrations
 - advanced prompt caching and cost optimization
 - native sandbox backends where Docker is unavailable

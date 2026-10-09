@@ -132,6 +132,9 @@ func run(ctx context.Context, argv []string) error {
 	}})
 	definitions := append(toolRegistry.List(), mcpResult.Tools...)
 	definitions = append(definitions, childManager.Definition())
+	if runtime.WebSearchEndpoint != "" {
+		definitions = append(definitions, tools.WebSearchTool(runtime.WebSearchEndpoint))
+	}
 	toolRegistry = tools.NewRegistry(definitions, tools.Metadata{Skills: discoveredSkills, MCPServers: mcpResult.Servers}).WithDisposer(mcpResult.Dispose)
 	var disposeToolsOnce sync.Once
 	disposeTools := func() { disposeToolsOnce.Do(func() { _ = toolRegistry.Dispose(ctx) }) }

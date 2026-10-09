@@ -277,6 +277,18 @@ Notebook 的源代码单元，并在核对 SHA-256 和人工审查差异后修�
 修改代码单元会清除旧输出和执行计数；工具不会执行代码。详见
 [P2.1 RFC](docs/rfc/p2-1-notebook-editing.md)。
 
+`web_fetch` 可将公开 HTTPS 网页读取为有长度限制的文本。启用 `web_search`
+时，在用户配置 `~/.my-code/settings.json` 中填写可信的 SearXNG JSON 搜索端点：
+
+```json
+{"webSearchEndpoint":"https://search.example/search"}
+```
+
+每个完整请求 URL 都需单次交互审批，之后仍需已有的精确来源网络授权。
+重定向、私有地址、二进制响应与无人值守请求会被拒绝。未配置端点时
+不注册搜索工具；端点需支持 JSON 格式。网页正文与搜索摘要均为不可信内容。
+详见 [P2.2 RFC](docs/rfc/p2-2-web-tools.md)。
+
 ## 整体架构
 
 可以把 Go 版看成几层协作的运行时：

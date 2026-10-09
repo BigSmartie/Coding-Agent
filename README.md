@@ -160,6 +160,21 @@ cell at a time with `edit_notebook_cell`. An edit requires the cell's SHA-256
 from the read result and a reviewed file diff; changed code cells lose their
 saved outputs and execution count. See the [P2.1 RFC](docs/rfc/p2-1-notebook-editing.md).
 
+`web_fetch` reads public HTTPS pages as bounded text. To enable `web_search`,
+set a trusted SearXNG JSON endpoint in your user settings at
+`~/.my-code/settings.json` (use your actual endpoint):
+
+```json
+{"webSearchEndpoint":"https://search.example/search"}
+```
+
+Each full request URL requires one-time interactive approval, followed by the
+existing exact-origin network approval. Redirects, private addresses, binary
+responses, and unattended web requests fail closed. Search is unavailable until
+the endpoint is configured; the endpoint must support SearXNG's JSON format.
+Page text and search snippets are untrusted. See the
+[P2.2 RFC](docs/rfc/p2-2-web-tools.md).
+
 Review project instructions and each MCP configuration before enabling them:
 
 ```text
