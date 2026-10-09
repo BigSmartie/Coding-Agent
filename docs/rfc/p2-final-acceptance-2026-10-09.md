@@ -11,7 +11,7 @@ remaining checks that can run with the services available on the Windows host.
 | WSL2 guest PTY, sustained job, artifact, cancellation | Passed | `TestIntegrationWSLGuestPTY` on the local Windows/WSL2 host. |
 | Checkpoint, crash replay, interrupted tool recovery, durable task | Passed | Focused `internal/session` journal and task tests. |
 | Go and VS Code unit checks | Passed | `go vet ./...`, `go test -count=1 -timeout=5m ./...`, `node --test editors/vscode/context.test.js`. |
-| VS Code installable package | Prepared | `mycode-vscode-0.1.0.vsix` built with `@vscode/vsce`; package is a local ignored artifact. |
+| VS Code installable package | Prepared | `mythoscode-vscode-0.1.0.vsix` built with `@vscode/vsce`; package is a local ignored artifact. |
 | SearXNG HTTPS JSON search | Passed | `TestLiveSearXNGSearch` returned seven bounded public results from the configured endpoint. |
 
 Windows Docker PTY is allocated inside the container by a fixed Python helper.
@@ -26,7 +26,7 @@ image on Ubuntu.
 The SearXNG endpoint is now `https://search.bigsmartie.cn/search` in the
 Windows user settings. It runs on the user's server behind HTTPS and an
 address allowlist; see the [operations note](../ops/searxng.md). The endpoint
-was exercised through the normal MyCode egress client. Anthropic cache request
+was exercised through the normal MythosCode egress client. Anthropic cache request
 encoding and usage parsing are covered by local fixtures only; no live
 Anthropic cache check is required for this DeepSeek-based deployment. The
 remaining publication step needs external prerequisites:

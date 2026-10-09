@@ -26,7 +26,7 @@ type nativeCredential struct {
 }
 
 func credentialTarget(id string) (*uint16, error) {
-	return windows.UTF16PtrFromString("mycode/" + id)
+	return windows.UTF16PtrFromString("mythoscode/" + id)
 }
 
 func (SystemStore) Get(id string) (string, error) {

@@ -129,7 +129,7 @@ func RenderChatScreen(appName, cwd, model, feed, input string, cursorOffset int,
 	composer := RenderComposer(input, cursorOffset, ComposerOptions{
 		Width:       width,
 		Prompt:      ">",
-		Placeholder: `Ask MyCode to inspect, edit, or explain`,
+		Placeholder: `Ask MythosCode to inspect, edit, or explain`,
 		RightText:   formatUsageRightText(usage) + "  Enter send",
 		FooterText:  "? shortcuts | / commands | Esc clear | Ctrl+C cancel",
 	})

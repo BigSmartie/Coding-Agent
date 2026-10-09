@@ -159,12 +159,12 @@ func parseInstallArgs(args []string) (installOptions, error) {
 			options.baseURL = value
 			options.hasConfig = true
 		case "--auth-token":
-			return installOptions{}, fmt.Errorf("--auth-token is disabled because command-line arguments expose secrets; use mycode auth login or process environment")
+			return installOptions{}, fmt.Errorf("--auth-token is disabled because command-line arguments expose secrets; use mythoscode auth login or process environment")
 		case "--api-key":
-			return installOptions{}, fmt.Errorf("--api-key is disabled because command-line arguments expose secrets; use mycode auth login or process environment")
+			return installOptions{}, fmt.Errorf("--api-key is disabled because command-line arguments expose secrets; use mythoscode auth login or process environment")
 		default:
 			if strings.HasPrefix(args[i], "--api-key=") || strings.HasPrefix(args[i], "--auth-token=") {
-				return installOptions{}, fmt.Errorf("credential command-line arguments are disabled; use mycode auth login")
+				return installOptions{}, fmt.Errorf("credential command-line arguments are disabled; use mythoscode auth login")
 			}
 			return installOptions{}, fmt.Errorf("Unknown install-local argument: %s", args[i])
 		}
@@ -276,7 +276,7 @@ func handleAuth(cwd string, args []string) (string, bool, error) {
 		return "Project provider credentials migrated to the OS store and user settings; plaintext provider fields removed from project settings.", true, nil
 	}
 	if len(args) != 1 {
-		return "", true, fmt.Errorf("use mycode auth login or mycode auth migrate [--from-project]")
+		return "", true, fmt.Errorf("use mythoscode auth login or mythoscode auth migrate [--from-project]")
 	}
 	switch args[0] {
 	case "login":
@@ -297,7 +297,7 @@ func handleAuth(cwd string, args []string) (string, bool, error) {
 		}
 		return "User settings credentials migrated to the operating system store. Project and other application files were not modified.", true, nil
 	default:
-		return "", true, fmt.Errorf("use mycode auth login or mycode auth migrate")
+		return "", true, fmt.Errorf("use mythoscode auth login or mythoscode auth migrate")
 	}
 }
 
@@ -550,7 +550,7 @@ func handleMCP(_ context.Context, cwd string, args []string) (string, bool, erro
 			return "", true, err
 		}
 		servers[rest[1]] = server
-		return "Added remote MCP server " + rest[1] + " to " + path + "; review with mycode trust mcp " + rest[1], true, config.SaveMCPConfig(path, servers)
+		return "Added remote MCP server " + rest[1] + " to " + path + "; review with mythoscode trust mcp " + rest[1], true, config.SaveMCPConfig(path, servers)
 	}
 	return usage(), true, nil
 }

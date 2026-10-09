@@ -46,7 +46,7 @@ func TestBuildIncludesSkillsMCPAndClaudeFiles(t *testing.T) {
 		MCPServers:        []tools.MCPServerSummary{{Name: "fs", Status: "connected", ToolCount: 2}},
 	})
 
-	for _, want := range []string{"You are mycode", "Demo skill", "fs: connected", "Global rule", "Project rule"} {
+	for _, want := range []string{"You are mythoscode", "Demo skill", "fs: connected", "Global rule", "Project rule"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, got)
 		}
@@ -141,7 +141,7 @@ func TestBuildIncludesTypeScriptParityBehaviorRules(t *testing.T) {
 
 func TestGlobalMemoryExpandsBoundedNestedInclude(t *testing.T) {
 	cwd, home := t.TempDir(), t.TempDir()
-	root := filepath.Join(home, ".my-code")
+	root := filepath.Join(home, ".mythos-code")
 	if err := os.MkdirAll(filepath.Join(root, "notes"), 0o700); err != nil {
 		t.Fatal(err)
 	}

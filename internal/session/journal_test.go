@@ -232,7 +232,7 @@ func TestJournalExclusiveLockAndTornTailRecovery(t *testing.T) {
 		t.Fatal("second process-style session lock succeeded")
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestJournalLockHelperProcess$")
-	cmd.Env = append(os.Environ(), "MYCODE_TEST_JOURNAL_LOCK=1", "MYCODE_TEST_JOURNAL_DIR="+store.Dir)
+	cmd.Env = append(os.Environ(), "MYTHOSCODE_TEST_JOURNAL_LOCK=1", "MYTHOSCODE_TEST_JOURNAL_DIR="+store.Dir)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("cross-process lock was not enforced: %v: %s", err, output)
 	}
@@ -266,10 +266,10 @@ func TestJournalExclusiveLockAndTornTailRecovery(t *testing.T) {
 }
 
 func TestJournalLockHelperProcess(t *testing.T) {
-	if os.Getenv("MYCODE_TEST_JOURNAL_LOCK") != "1" {
+	if os.Getenv("MYTHOSCODE_TEST_JOURNAL_LOCK") != "1" {
 		return
 	}
-	store := Store{Dir: os.Getenv("MYCODE_TEST_JOURNAL_DIR")}
+	store := Store{Dir: os.Getenv("MYTHOSCODE_TEST_JOURNAL_DIR")}
 	if journal, err := store.OpenJournal("session-1"); err == nil {
 		journal.Close()
 		t.Fatal("second process acquired active session")

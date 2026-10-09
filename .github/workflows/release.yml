@@ -37,12 +37,12 @@ jobs:
           for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
             os="${target%/*}"
             arch="${target#*/}"
-            binary="raw/mycode-${os}-${arch}"
+            binary="raw/mythoscode-${os}-${arch}"
             if [ "$os" = windows ]; then binary="${binary}.exe"; fi
-            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags='-buildid=' -o "$binary" ./cmd/mycode
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags='-buildid=' -o "$binary" ./cmd/mythoscode
             ./.releasepack pack -binary "$binary" -version "$GITHUB_REF_NAME" -os "$os" -arch "$arch" -epoch "$epoch" -out dist
           done
-          ./.releasepack sbom -version "$GITHUB_REF_NAME" -epoch "$epoch" -out dist/mycode.spdx.json
+          ./.releasepack sbom -version "$GITHUB_REF_NAME" -epoch "$epoch" -out dist/mythoscode.spdx.json
           ./.releasepack checksums -out dist
       - name: Sign release artifact provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -58,7 +58,7 @@ jobs:
           subject-path: |
             dist/*.tar.gz
             dist/*.zip
-          sbom-path: dist/mycode.spdx.json
+          sbom-path: dist/mythoscode.spdx.json
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}

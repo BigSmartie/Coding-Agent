@@ -22,7 +22,7 @@ func run() int {
 	manifest := flag.String("manifest", "", "path to a pinned repository task JSON manifest")
 	flag.Parse()
 	if *manifest == "" || flag.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: mycode-eval -manifest task.json")
+		fmt.Fprintln(os.Stderr, "usage: mythoscode-eval -manifest task.json")
 		return 2
 	}
 	spec, err := eval.LoadSpec(*manifest)
@@ -35,7 +35,7 @@ func run() int {
 	}
 	// Resolve user configuration from an empty scope, never from the source
 	// repository or from the directory where this command was launched.
-	configScope, err := os.MkdirTemp("", "mycode-eval-config-*")
+	configScope, err := os.MkdirTemp("", "mythoscode-eval-config-*")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

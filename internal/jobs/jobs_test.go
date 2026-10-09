@@ -41,7 +41,7 @@ func TestJobsRequireApprovalBeforeDocker(t *testing.T) {
 }
 
 func TestIntegrationBackgroundJobPTYCancelAndArtifact(t *testing.T) {
-	if os.Getenv("MY_CODE_SANDBOX_INTEGRATION") != "1" || os.Getenv("MY_CODE_SANDBOX_IMAGE") == "" {
+	if os.Getenv("MYTHOS_CODE_SANDBOX_INTEGRATION") != "1" || os.Getenv("MYTHOS_CODE_SANDBOX_IMAGE") == "" {
 		t.Skip("Docker integration is opt-in")
 	}
 	m := New(t.TempDir(), "test-session", allowPermission{}, nil)
@@ -82,10 +82,10 @@ func TestIntegrationBackgroundJobPTYCancelAndArtifact(t *testing.T) {
 }
 
 func TestIntegrationWSLGuestPTY(t *testing.T) {
-	if runtime.GOOS != "windows" || os.Getenv("MY_CODE_WSL_INTEGRATION") != "1" {
+	if runtime.GOOS != "windows" || os.Getenv("MYTHOS_CODE_WSL_INTEGRATION") != "1" {
 		t.Skip("Windows WSL2 integration is opt-in")
 	}
-	t.Setenv("MY_CODE_SANDBOX_BACKEND", "wsl")
+	t.Setenv("MYTHOS_CODE_SANDBOX_BACKEND", "wsl")
 	m := New(t.TempDir(), "wsl-pty-test", allowPermission{}, nil)
 	defer m.Close()
 	job, err := m.Start(context.Background(), Spec{Command: "/bin/sh", Args: []string{"-c", `test -t 0 && echo tty-ready; read line; printf 'reply:%s\n' "$line"`}, TTY: true})

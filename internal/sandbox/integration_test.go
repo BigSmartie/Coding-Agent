@@ -13,18 +13,18 @@ import (
 
 func integrationEnabled(t *testing.T) {
 	t.Helper()
-	if os.Getenv("MY_CODE_SANDBOX_INTEGRATION") != "1" {
-		t.Skip("set MY_CODE_SANDBOX_INTEGRATION=1 with a locally installed Linux /bin/sh image")
+	if os.Getenv("MYTHOS_CODE_SANDBOX_INTEGRATION") != "1" {
+		t.Skip("set MYTHOS_CODE_SANDBOX_INTEGRATION=1 with a locally installed Linux /bin/sh image")
 	}
-	if os.Getenv("MY_CODE_SANDBOX_IMAGE") == "" {
-		t.Fatal("MY_CODE_SANDBOX_IMAGE is required for integration tests")
+	if os.Getenv("MYTHOS_CODE_SANDBOX_IMAGE") == "" {
+		t.Fatal("MYTHOS_CODE_SANDBOX_IMAGE is required for integration tests")
 	}
 }
 
 func TestIntegrationIsolation(t *testing.T) {
 	integrationEnabled(t)
 	cwd := t.TempDir()
-	for name, value := range map[string]string{"source.txt": "original", "nested/child.txt": "child", ".env": "workspace-secret", ".my-code/settings.json": "configuration-secret", ".git/config": "git-secret"} {
+	for name, value := range map[string]string{"source.txt": "original", "nested/child.txt": "child", ".env": "workspace-secret", ".mythos-code/settings.json": "configuration-secret", ".git/config": "git-secret"} {
 		target := filepath.Join(cwd, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 			t.Fatal(err)
@@ -38,7 +38,7 @@ func TestIntegrationIsolation(t *testing.T) {
 	script := `set -eu
 test "$(cat source.txt)" = original
 test ! -e .env
-test ! -e .my-code
+test ! -e .mythos-code
 test ! -e .git
 test ! -S /var/run/docker.sock
 if touch /input/forbidden-input-write 2>/dev/null; then exit 21; fi

@@ -1,6 +1,6 @@
-# MyCode 路线图
+# MythosCode 路线图
 
-MyCode 当前定位为早期 Alpha。P0 实现基线已经完成，具体测试证据和仍需原生
+MythosCode 当前定位为早期 Alpha。P0 实现基线已经完成，具体测试证据和仍需原生
 环境验证的项目记录在 [P0_DEVELOPMENT.md](P0_DEVELOPMENT.md)，当前信任边界
 以 [SECURITY.md](SECURITY.md) 为准。
 

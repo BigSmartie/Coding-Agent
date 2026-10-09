@@ -21,7 +21,7 @@ func TestHelpCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !handled || !strings.Contains(out, "mycode management commands") {
+	if !handled || !strings.Contains(out, "mythoscode management commands") {
 		t.Fatalf("unexpected result: %q handled=%v", out, handled)
 	}
 }
@@ -105,7 +105,7 @@ func TestInstallLocalCommand(t *testing.T) {
 	if !handled {
 		t.Fatal("expected command handled")
 	}
-	for _, want := range []string{"Installed MyCode", filepath.Join(home, ".local", "bin", brand.LauncherName), "PATH"} {
+	for _, want := range []string{"Installed MythosCode", filepath.Join(home, ".local", "bin", brand.LauncherName), "PATH"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
@@ -141,7 +141,7 @@ func TestInstallLocalInteractivePromptsForSettings(t *testing.T) {
 	if !handled {
 		t.Fatal("expected command handled")
 	}
-	if !strings.Contains(prompts.String(), "mycode installer") || !strings.Contains(out, "settings: "+config.SettingsPath()) {
+	if !strings.Contains(prompts.String(), "mythoscode installer") || !strings.Contains(out, "settings: "+config.SettingsPath()) {
 		t.Fatalf("expected installer prompts and settings output, prompts=%q out=%q", prompts.String(), out)
 	}
 	runtime, err := config.LoadRuntimeWithStore(cwd, store)

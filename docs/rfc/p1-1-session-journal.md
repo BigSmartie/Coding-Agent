@@ -58,7 +58,7 @@ reasoning controls, and opaque reasoning-state handling. It describes the
 adapter, not a guarantee that a selected model or compatible gateway supports
 each feature. Context window defaults to unknown (`0`); users may set
 `contextWindowTokens` in their private settings or
-`MY_CODE_CONTEXT_WINDOW_TOKENS` in their process environment. Project settings
+`MYTHOS_CODE_CONTEXT_WINDOW_TOKENS` in their process environment. Project settings
 cannot raise this trusted limit. `TokenUsage` normalizes Anthropic cached read
 and write tokens into the input total, and records the corresponding OpenAI
 usage breakdowns. OpenAI usage fields follow the [Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)

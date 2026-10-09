@@ -97,10 +97,10 @@ func (SystemStore) Get(id string) (string, error) {
 		return "", err
 	}
 	if runtime.GOOS == "darwin" {
-		return runStore("/usr/bin/security", []string{"find-generic-password", "-s", "mycode", "-a", id, "-w"}, "")
+		return runStore("/usr/bin/security", []string{"find-generic-password", "-s", "mythoscode", "-a", id, "-w"}, "")
 	}
 	if runtime.GOOS == "linux" {
-		return runStore("secret-tool", []string{"lookup", "service", "mycode", "account", id}, "")
+		return runStore("secret-tool", []string{"lookup", "service", "mythoscode", "account", id}, "")
 	}
 	return "", errors.New("OS credential storage is unsupported on this platform")
 }
@@ -117,7 +117,7 @@ func (SystemStore) Set(id, secret string) error {
 	switch runtime.GOOS {
 	case "darwin":
 		// Interactive mode reads the secret from stdin, keeping it out of argv.
-		_, err = runStore("/usr/bin/security", []string{"-i"}, "add-generic-password -U -s mycode -a "+securityQuote(id)+" -w "+securityQuote(secret)+"\n")
+		_, err = runStore("/usr/bin/security", []string{"-i"}, "add-generic-password -U -s mythoscode -a "+securityQuote(id)+" -w "+securityQuote(secret)+"\n")
 		if err == nil {
 			// security -i may exit successfully after an individual command fails.
 			stored, readErr := (SystemStore{}).Get(id)
@@ -126,7 +126,7 @@ func (SystemStore) Set(id, secret string) error {
 			}
 		}
 	case "linux":
-		_, err = runStore("secret-tool", []string{"store", "--label=MyCode provider credential", "service", "mycode", "account", id}, secret)
+		_, err = runStore("secret-tool", []string{"store", "--label=MythosCode provider credential", "service", "mythoscode", "account", id}, secret)
 	default:
 		err = errors.New("OS credential storage is unsupported on this platform")
 	}
@@ -138,11 +138,11 @@ func (SystemStore) Delete(id string) error {
 		return err
 	}
 	if runtime.GOOS == "darwin" {
-		_, err := runStore("/usr/bin/security", []string{"delete-generic-password", "-s", "mycode", "-a", id}, "")
+		_, err := runStore("/usr/bin/security", []string{"delete-generic-password", "-s", "mythoscode", "-a", id}, "")
 		return err
 	}
 	if runtime.GOOS == "linux" {
-		_, err := runStore("secret-tool", []string{"clear", "service", "mycode", "account", id}, "")
+		_, err := runStore("secret-tool", []string{"clear", "service", "mythoscode", "account", id}, "")
 		return err
 	}
 	return errors.New("OS credential storage is unsupported on this platform")

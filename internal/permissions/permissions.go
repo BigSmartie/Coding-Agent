@@ -173,7 +173,7 @@ func (m *Manager) EnsurePathAccess(ctx context.Context, targetPath, intent strin
 		return nil
 	}
 	if m.prompt == nil {
-		return fmt.Errorf("Path %s is outside cwd %s. Start mycode in TTY mode to approve it.", target, m.workspaceRoot)
+		return fmt.Errorf("Path %s is outside cwd %s. Start mythoscode in TTY mode to approve it.", target, m.workspaceRoot)
 	}
 	scope := filepath.Dir(target)
 	if intent == "list" || intent == "command_cwd" {
@@ -181,7 +181,7 @@ func (m *Manager) EnsurePathAccess(ctx context.Context, targetPath, intent strin
 	}
 	result, err := m.prompt(ctx, Request{
 		Kind:    KindPath,
-		Summary: "MyCode wants " + strings.ReplaceAll(intent, "_", " ") + " access outside the current cwd",
+		Summary: "MythosCode wants " + strings.ReplaceAll(intent, "_", " ") + " access outside the current cwd",
 		Details: []string{"cwd: " + m.workspaceRoot, "target: " + target, "scope directory: " + scope},
 		Scope:   scope,
 		Choices: []Choice{
@@ -223,11 +223,11 @@ func (m *Manager) EnsureCommand(ctx context.Context, command string, args []stri
 		return nil
 	}
 	if m.prompt == nil {
-		return fmt.Errorf("Command requires approval: %s. Start mycode in TTY mode to approve it.", signature)
+		return fmt.Errorf("Command requires approval: %s. Start mythoscode in TTY mode to approve it.", signature)
 	}
 	result, err := m.prompt(ctx, Request{
 		Kind:    KindCommand,
-		Summary: "MyCode wants to run a command (potentially dangerous) in the isolated sandbox",
+		Summary: "MythosCode wants to run a command (potentially dangerous) in the isolated sandbox",
 		Details: []string{"cwd: " + cwd, "command: " + formatCommand(command, args), "reason: " + reason},
 		Scope:   signature,
 		Choices: []Choice{
@@ -265,11 +265,11 @@ func (m *Manager) EnsureEdit(ctx context.Context, targetPath, diffPreview string
 		return nil
 	}
 	if m.prompt == nil {
-		return fmt.Errorf("Edit requires approval: %s. Start mycode in TTY mode to review it.", target)
+		return fmt.Errorf("Edit requires approval: %s. Start mythoscode in TTY mode to review it.", target)
 	}
 	result, err := m.prompt(ctx, Request{
 		Kind:    KindEdit,
-		Summary: "MyCode wants to apply a file modification",
+		Summary: "MythosCode wants to apply a file modification",
 		Details: []string{"target: " + target, "", diffPreview},
 		Scope:   target,
 		Choices: []Choice{

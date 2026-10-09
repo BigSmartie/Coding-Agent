@@ -1,6 +1,6 @@
-# MyCode Architecture
+# MythosCode Architecture
 
-MyCode is a Go-first terminal coding assistant. Its core loop is intentionally
+MythosCode is a Go-first terminal coding assistant. Its core loop is intentionally
 small:
 
 ```text
@@ -22,7 +22,7 @@ file changes, and keep the conversation moving inside a terminal.
 
 ## Runtime Packages
 
-- `cmd/mycode`: Parses startup arguments, loads runtime config, wires skills,
+- `cmd/mythoscode`: Parses startup arguments, loads runtime config, wires skills,
   MCP tools, permissions, model adapters, and session state.
 - `internal/agent`: Drives the model/tool/model loop, including progress
   continuation, clarification stops, empty-response recovery, and tool errors.
@@ -38,7 +38,7 @@ file changes, and keep the conversation moving inside a terminal.
   records, and command history.
 - `internal/tui`: Renders panels, transcript entries, slash menus, input, and
   highlighted diffs.
-- `internal/config`: Loads `~/.my-code/settings.json`, `~/.my-code/mcp.json`,
+- `internal/config`: Loads `~/.mythos-code/settings.json`, `~/.mythos-code/mcp.json`,
   project `.mcp.json`, Claude-compatible fallbacks, and process environment.
 - `internal/credentials`: Stores keys in native OS credential services; settings
   hold only random references bound to an HTTPS origin.
@@ -48,28 +48,28 @@ file changes, and keep the conversation moving inside a terminal.
 - `internal/safety`: Escapes terminal controls, redacts secrets and atomically
   replaces private state files.
 - `internal/skills`: Discovers and manages local `SKILL.md` workflows under
-  `.my-code/skills`, `~/.my-code/skills`, and Claude-compatible skill folders.
+  `.mythos-code/skills`, `~/.mythos-code/skills`, and Claude-compatible skill folders.
 - `internal/mcp`: Starts stdio MCP servers, handles JSON-RPC framing, wraps
   remote tools, and exposes resource/prompt helpers.
-- `internal/install`: Builds `mycode-go` and writes the local `mycode` launcher.
+- `internal/install`: Builds `mythoscode-go` and writes the local `mythoscode` launcher.
 - `internal/manage`: Implements management commands such as `install-local`,
   `sessions list`, `mcp`, and `skills`.
-- `internal/brand`: Owns product constants such as `MyCode`, `mycode`,
-  `.my-code`, and `MY_CODE`.
+- `internal/brand`: Owns product constants such as `MythosCode`, `mythoscode`,
+  `.mythos-code`, and `MYTHOS_CODE`.
 
 ## Configuration Model
 
-MyCode uses its own config namespace:
+MythosCode uses its own config namespace:
 
 ```text
-~/.my-code/settings.json
-~/.my-code/mcp.json
-~/.my-code/permissions.json
-~/.my-code/history.json
-~/.my-code/sessions/
+~/.mythos-code/settings.json
+~/.mythos-code/mcp.json
+~/.mythos-code/permissions.json
+~/.mythos-code/history.json
+~/.mythos-code/sessions/
 ```
 
-`MY_CODE_HOME` can override the app state directory. This is useful for tests,
+`MYTHOS_CODE_HOME` can override the app state directory. This is useful for tests,
 CI, and portable development, but it must be outside the current workspace.
 
 Project settings can only select a model/output limit and define MCP servers.
@@ -98,4 +98,4 @@ go test -race ./...
 ```
 
 Windows-specific behavior is covered by tests that avoid Unix-only executable
-mode assumptions and isolate app state with `MY_CODE_HOME`.
+mode assumptions and isolate app state with `MYTHOS_CODE_HOME`.

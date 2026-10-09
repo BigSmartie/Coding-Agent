@@ -137,12 +137,12 @@ func TestRenderTranscriptPreviewsLargeToolOutput(t *testing.T) {
 }
 
 func TestRenderHomeScreenShowsSectionsAndComposer(t *testing.T) {
-	out := RenderHomeScreen("MyCode", "v0.1.0", "D:\\MiniCode", "gpt-5.5", []InfoSection{
+	out := RenderHomeScreen("MythosCode", "v0.1.0", "D:\\MiniCode", "gpt-5.5", []InfoSection{
 		{Title: "Tips for getting started", Body: "Run /help"},
 		{Title: "What's new", Body: "Fresh paint"},
 	}, "Banner text", "", 0, nil, 0, message.TokenUsage{TotalTokens: 321}, 100, 32)
 	plain := ansiPattern.ReplaceAllString(out, "")
-	for _, want := range []string{"MyCode", "Welcome back!", "Tips for getting started", "What's new", "Banner text", `Try "fix typecheck errors"`, "tok 321"} {
+	for _, want := range []string{"MythosCode", "Welcome back!", "Tips for getting started", "What's new", "Banner text", `Try "fix typecheck errors"`, "tok 321"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("home screen missing %q:\n%s", want, plain)
 		}

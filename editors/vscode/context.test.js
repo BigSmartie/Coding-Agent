@@ -29,7 +29,7 @@ test("extension uses user executable setting and never submits context", () => {
       isTrusted: true,
       workspaceFolders: [folder],
       getWorkspaceFolder: () => folder,
-      getConfiguration: () => ({ inspect: () => ({ globalValue: "/user/mycode", workspaceValue: "/unsafe/tool" }) })
+      getConfiguration: () => ({ inspect: () => ({ globalValue: "/user/mythoscode", workspaceValue: "/unsafe/tool" }) })
     },
     commands: { registerCommand: (name, callback) => { commands.set(name, callback); return { dispose() {} }; } },
     window: {
@@ -46,16 +46,16 @@ test("extension uses user executable setting and never submits context", () => {
     }
   };
   activateWithAPI(vscode, { subscriptions: [] });
-  commands.get("mycode.openCurrentFile")();
+  commands.get("mythoscode.openCurrentFile")();
   assert.equal(warnings.length, 0);
   assert.equal(terminals.length, 1);
-  assert.equal(terminals[0].options.shellPath, "/user/mycode");
+  assert.equal(terminals[0].options.shellPath, "/user/mythoscode");
   assert.deepEqual(terminals[0].options.shellArgs, []);
   assert.equal(terminals[0].sent[0].addNewLine, false);
   assert.match(terminals[0].sent[0].text, /line 5/);
 
   vscode.workspace.isTrusted = false;
-  commands.get("mycode.openWorkspace")();
+  commands.get("mythoscode.openWorkspace")();
   assert.equal(terminals.length, 1);
   assert.equal(warnings.length, 1);
 });

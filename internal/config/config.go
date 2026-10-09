@@ -179,7 +179,7 @@ func LoadRuntimeWithStore(cwd string, store credentials.Store) (Runtime, error) 
 		if provider == "openai" {
 			authEnv = "OPENAI_AUTH_TOKEN or OPENAI_API_KEY"
 		}
-		return Runtime{}, errors.New("No auth configured. Run mycode auth login or set " + authEnv + " in process env.")
+		return Runtime{}, errors.New("No auth configured. Run mythoscode auth login or set " + authEnv + " in process env.")
 	}
 
 	sourceSummary := "config: " + SettingsPath() + " > " + ProjectSettingsPath(cwd) + " > " + ClaudeSettingsPath() + " > process.env"
@@ -313,14 +313,14 @@ func SaveSettings(updates Settings) error {
 		}
 	}
 	if containsSecrets(updates) {
-		return errors.New("raw secrets cannot be written to settings; run mycode auth login")
+		return errors.New("raw secrets cannot be written to settings; run mythoscode auth login")
 	}
 	existing, err := readSettings(SettingsPath())
 	if err != nil {
 		return err
 	}
 	if containsSecrets(existing) {
-		return errors.New("legacy plaintext credentials found; run mycode auth migrate before saving settings")
+		return errors.New("legacy plaintext credentials found; run mythoscode auth migrate before saving settings")
 	}
 	return writeJSON(SettingsPath(), mergeSettings(existing, updates))
 }

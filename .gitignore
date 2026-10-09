@@ -3,5 +3,5 @@ tmp/
 dist/
 .DS_Store
 *.log
-.my-code/
+.mythos-code/
 .idea/

@@ -48,7 +48,7 @@ func (s Store) path(cwd string) (string, error) {
 		return "", err
 	}
 	if workspace.Within(root, dir) {
-		return "", fmt.Errorf("trust store must be outside the workspace; remove the workspace MY_CODE_HOME override")
+		return "", fmt.Errorf("trust store must be outside the workspace; remove the workspace MYTHOS_CODE_HOME override")
 	}
 	return filepath.Join(dir, "trust.json"), nil
 }
@@ -146,7 +146,7 @@ func MCPFingerprint(cwd, name string, server config.MCPServerConfig) (string, er
 		Version                int
 		Workspace, Name, Image string
 		Config                 config.MCPServerConfig
-	}{1, root, name, os.Getenv("MY_CODE_SANDBOX_IMAGE"), server})
+	}{1, root, name, os.Getenv("MYTHOS_CODE_SANDBOX_IMAGE"), server})
 	if err != nil {
 		return "", err
 	}
@@ -159,7 +159,7 @@ func Handle(cwd string, argv []string) (string, bool, error) {
 	if len(argv) == 0 || argv[0] != "trust" {
 		return "", false, nil
 	}
-	usage := "Usage: mycode trust workspace [--accept FINGERPRINT | --revoke]\n       mycode trust mcp NAME [--accept FINGERPRINT | --revoke]"
+	usage := "Usage: mythoscode trust workspace [--accept FINGERPRINT | --revoke]\n       mythoscode trust mcp NAME [--accept FINGERPRINT | --revoke]"
 	if len(argv) < 2 {
 		return usage, true, nil
 	}
@@ -216,7 +216,7 @@ func Handle(cwd string, argv []string) (string, bool, error) {
 			}
 			sort.Strings(envKeys)
 			args, _ := json.Marshal(server.Args)
-			details = fmt.Sprintf("MCP server: %s\nCommand: %s\nArguments: %s\nWorking directory: %s\nExplicit environment keys: %s\nSandbox image: %s\nExecution: isolated workspace snapshot, network disabled; changes are temporary.", name, server.Command, args, server.CWD, strings.Join(envKeys, ", "), os.Getenv("MY_CODE_SANDBOX_IMAGE"))
+			details = fmt.Sprintf("MCP server: %s\nCommand: %s\nArguments: %s\nWorking directory: %s\nExplicit environment keys: %s\nSandbox image: %s\nExecution: isolated workspace snapshot, network disabled; changes are temporary.", name, server.Command, args, server.CWD, strings.Join(envKeys, ", "), os.Getenv("MYTHOS_CODE_SANDBOX_IMAGE"))
 		}
 	default:
 		return usage, true, fmt.Errorf("unknown trust capability")

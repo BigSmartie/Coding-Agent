@@ -119,7 +119,7 @@ func TestTrustRecordLinksCannotImportProjectGrants(t *testing.T) {
 func TestRevokeWorksWithInvalidRulesAndMissingMCP(t *testing.T) {
 	cwd := t.TempDir()
 	s := Store{Dir: t.TempDir()}
-	t.Setenv("MY_CODE_HOME", s.Dir)
+	t.Setenv("MYTHOS_CODE_HOME", s.Dir)
 	for _, capability := range []string{"workspace", "mcp:removed"} {
 		if err := s.Grant(cwd, capability, "old", "old"); err != nil {
 			t.Fatal(err)
@@ -176,7 +176,7 @@ func TestMCPConfigBoundToWorkspaceAndEnvironment(t *testing.T) {
 	if other == changed {
 		t.Fatal("MCP trust not workspace-bound")
 	}
-	if err := (Store{Dir: filepath.Join(cwd, ".my-code")}).Grant(cwd, "workspace", hash, hash); err == nil {
+	if err := (Store{Dir: filepath.Join(cwd, ".mythos-code")}).Grant(cwd, "workspace", hash, hash); err == nil {
 		t.Fatal("repository allowed to own trust store")
 	}
 }

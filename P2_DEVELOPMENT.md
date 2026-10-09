@@ -43,7 +43,7 @@ Each milestone's contract and failure behavior are in its linked
 
 ## Operational limits
 
-- The WSL backend is opt-in with `MY_CODE_SANDBOX_BACKEND=wsl` and requires
+- The WSL backend is opt-in with `MYTHOS_CODE_SANDBOX_BACKEND=wsl` and requires
   WSL2 plus Bubblewrap, `prlimit`, and `wslpath` in the default distribution.
   Guest PTY jobs additionally require Python 3. Docker remains the default;
   Windows Docker PTY jobs remain unsupported. WSL resource limits are process
@@ -63,11 +63,11 @@ repository. Run them from a shell with your service configuration. Neither
 check is enabled in CI:
 
 ```powershell
-$env:MY_CODE_LIVE_WEB_SEARCH = "1"
-$env:MY_CODE_WEB_SEARCH_ENDPOINT = "https://your-searxng.example/search"
+$env:MYTHOS_CODE_LIVE_WEB_SEARCH = "1"
+$env:MYTHOS_CODE_WEB_SEARCH_ENDPOINT = "https://your-searxng.example/search"
 go test -run '^TestLiveSearXNGSearch$' -count=1 ./internal/tools
 
-$env:MY_CODE_LIVE_DEEPSEEK_CACHE = "1"
+$env:MYTHOS_CODE_LIVE_DEEPSEEK_CACHE = "1"
 # Uses the existing OS-backed DeepSeek credential.
 go test -run '^TestLiveDeepSeekCache$' -count=1 ./internal/model
 ```

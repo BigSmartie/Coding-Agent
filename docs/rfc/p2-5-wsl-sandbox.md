@@ -2,10 +2,10 @@
 
 ## Contract
 
-`MY_CODE_SANDBOX_BACKEND=wsl` explicitly selects a Docker-free execution
+`MYTHOS_CODE_SANDBOX_BACKEND=wsl` explicitly selects a Docker-free execution
 backend on Windows. The default remains Docker. The selected default WSL2
 distribution must already contain `/usr/bin/bwrap`, `/usr/bin/prlimit`, and
-`/usr/bin/wslpath`; MyCode neither installs them nor falls back to the Windows
+`/usr/bin/wslpath`; MythosCode neither installs them nor falls back to the Windows
 host if preflight fails. Only Linux executables installed in that distribution
 can run. A WSL1 distribution is refused. The backend works for foreground
 commands, stdio MCP, and background jobs with reviewed artifact export. PTY
@@ -15,7 +15,7 @@ guest-side Python helper in a trusted container image with `python3` installed.
 
 ## Isolation and resource limits
 
-MyCode makes the same filtered Windows workspace snapshot used by Docker and
+MythosCode makes the same filtered Windows workspace snapshot used by Docker and
 converts only that private snapshot path into a WSL path. Bubblewrap creates
 user, PID, mount, IPC, UTS, cgroup, and network namespaces with `--unshare-all`,
 drops capabilities, disables nested user namespaces, and runs as UID/GID 65534.
@@ -51,7 +51,7 @@ verify non-root identity, filtered files, no host-drive mount, denied outbound
 socket connection, temporary edits, retained artifact export, and cancellation:
 
 ```powershell
-$env:MY_CODE_WSL_INTEGRATION = "1"
+$env:MYTHOS_CODE_WSL_INTEGRATION = "1"
 go test -run '^TestWSLBackendIsolation$' -count=1 ./internal/sandbox
 go test -run '^TestIntegrationWSLGuestPTY$' -count=1 ./internal/jobs
 ```

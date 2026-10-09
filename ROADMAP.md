@@ -1,6 +1,6 @@
-# MyCode Roadmap
+# MythosCode Roadmap
 
-MyCode is an early Alpha. The P0 implementation baseline is complete; its exact
+MythosCode is an early Alpha. The P0 implementation baseline is complete; its exact
 validation evidence and remaining environment checks are recorded in
 [P0_DEVELOPMENT.md](P0_DEVELOPMENT.md). [SECURITY.md](SECURITY.md) defines the
 current trust boundary.

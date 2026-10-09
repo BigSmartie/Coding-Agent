@@ -14,7 +14,7 @@ func TestCommandPlanCannotInjectDockerArguments(t *testing.T) {
 	cwd := t.TempDir()
 	snapshot := filepath.Join(t.TempDir(), "workspace")
 	input := Options{Workspace: cwd, CWD: cwd, Command: "/bin/sh", Args: []string{"-c", "echo hello", "--privileged", "--mount=type=bind,src=/,dst=/host"}, Env: map[string]string{"EXPLICIT_SETTING": "ok"}}
-	argv, err := commandArgs(input, cwd, snapshot, "sha256:trusted", "mycode-test")
+	argv, err := commandArgs(input, cwd, snapshot, "sha256:trusted", "mythoscode-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestCommandPlanRejectsOutsideCWDAndReservedEnvironment(t *testing.T) {
 }
 
 func TestNoSandboxConfigurationNeverFallsBackToHost(t *testing.T) {
-	t.Setenv("MY_CODE_SANDBOX_IMAGE", "")
+	t.Setenv("MYTHOS_CODE_SANDBOX_IMAGE", "")
 	cmd, cleanup, err := Prepare(context.Background(), Options{Workspace: t.TempDir(), Command: "echo", Args: []string{"hello"}})
 	if err == nil || cmd != nil || cleanup != nil || !strings.Contains(err.Error(), "host execution is disabled") {
 		t.Fatalf("unexpected fallback: cmd=%v err=%v", cmd, err)
@@ -76,7 +76,7 @@ func TestHostEnvironmentDoesNotForwardCredentialsOrLoaderSettings(t *testing.T) 
 
 func TestSnapshotExcludesProtectedFilesAndDoesNotModifySource(t *testing.T) {
 	cwd := t.TempDir()
-	for name, value := range map[string]string{"main.go": "package main", "nested/file.txt": "source", ".env": "secret", ".my-code/settings.json": "private", ".git/config": "private", "nested/.env.local": "private"} {
+	for name, value := range map[string]string{"main.go": "package main", "nested/file.txt": "source", ".env": "secret", ".mythos-code/settings.json": "private", ".git/config": "private", "nested/.env.local": "private"} {
 		target := filepath.Join(cwd, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 			t.Fatal(err)
@@ -90,7 +90,7 @@ func TestSnapshotExcludesProtectedFilesAndDoesNotModifySource(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(filepath.Dir(snapshot))
-	for _, name := range []string{".env", ".my-code", ".git", "nested/.env.local"} {
+	for _, name := range []string{".env", ".mythos-code", ".git", "nested/.env.local"} {
 		if _, err := os.Stat(filepath.Join(snapshot, filepath.FromSlash(name))); !os.IsNotExist(err) {
 			t.Fatalf("protected file copied: %s", name)
 		}
@@ -138,12 +138,12 @@ func TestOutputBound(t *testing.T) {
 
 func TestRetainedPTYPlanIsSessionBound(t *testing.T) {
 	cwd := t.TempDir()
-	argv, err := commandArgs(Options{Workspace: cwd, Command: "/bin/sh", RetainContainer: true, TTY: true, SessionID: "session-1", scratch: filepath.Join(t.TempDir(), "workspace")}, cwd, filepath.Join(t.TempDir(), "workspace"), "sha256:trusted", "mycode-test")
+	argv, err := commandArgs(Options{Workspace: cwd, Command: "/bin/sh", RetainContainer: true, TTY: true, SessionID: "session-1", scratch: filepath.Join(t.TempDir(), "workspace")}, cwd, filepath.Join(t.TempDir(), "workspace"), "sha256:trusted", "mythoscode-test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	joined := "\n" + strings.Join(argv, "\n") + "\n"
-	for _, required := range []string{"\n--tty\n", "\n--label\nmycode.session=session-1\n"} {
+	for _, required := range []string{"\n--tty\n", "\n--label\nmythoscode.session=session-1\n"} {
 		if !strings.Contains(joined, required) {
 			t.Fatalf("missing job option %q", required)
 		}
@@ -151,7 +151,7 @@ func TestRetainedPTYPlanIsSessionBound(t *testing.T) {
 	if strings.Contains(joined, "\n--rm\n") {
 		t.Fatal("retained container was marked for automatic removal before export")
 	}
-	if _, err := commandArgs(Options{Workspace: cwd, Command: "/bin/sh", SessionID: "../outside"}, cwd, filepath.Join(t.TempDir(), "workspace"), "sha256:trusted", "mycode-test"); err == nil {
+	if _, err := commandArgs(Options{Workspace: cwd, Command: "/bin/sh", SessionID: "../outside"}, cwd, filepath.Join(t.TempDir(), "workspace"), "sha256:trusted", "mythoscode-test"); err == nil {
 		t.Fatal("invalid sandbox session label was accepted")
 	}
 }
@@ -159,7 +159,7 @@ func TestRetainedPTYPlanIsSessionBound(t *testing.T) {
 func TestWindowsDockerGuestPTYPlanKeepsArgumentsSeparate(t *testing.T) {
 	cwd := t.TempDir()
 	argument := "hello'; touch /tmp/escaped; '"
-	argv, err := commandArgs(Options{Workspace: cwd, Command: "/bin/echo", Args: []string{argument}, TTY: true, guestTTY: true}, cwd, filepath.Join(t.TempDir(), "workspace"), "sha256:trusted", "mycode-test")
+	argv, err := commandArgs(Options{Workspace: cwd, Command: "/bin/echo", Args: []string{argument}, TTY: true, guestTTY: true}, cwd, filepath.Join(t.TempDir(), "workspace"), "sha256:trusted", "mythoscode-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestWindowsDockerGuestPTYPlanKeepsArgumentsSeparate(t *testing.T) {
 }
 
 func TestJobArtifactUsesBoundedNoFollowScratch(t *testing.T) {
-	root, err := os.MkdirTemp("", "mycode-jobs-test-artifact-")
+	root, err := os.MkdirTemp("", "mythoscode-jobs-test-artifact-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestJobArtifactUsesBoundedNoFollowScratch(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(scratch, "out.txt"), []byte("result"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cmd := &exec.Cmd{Args: []string{"docker", "run", "--name", "mycode-" + strings.Repeat("a", 24), "--mount", "type=bind,src=" + scratch + ",dst=/workspace"}}
+	cmd := &exec.Cmd{Args: []string{"docker", "run", "--name", "mythoscode-" + strings.Repeat("a", 24), "--mount", "type=bind,src=" + scratch + ",dst=/workspace"}}
 	data, err := CopyArtifact(context.Background(), cmd, "out.txt")
 	if err != nil || string(data) != "result" {
 		t.Fatalf("scratch artifact missing: %q, %v", data, err)
@@ -215,7 +215,7 @@ func TestJobArtifactUsesBoundedNoFollowScratch(t *testing.T) {
 
 func TestSessionScratchCleanupStaysWithinTempRoot(t *testing.T) {
 	id := "scratchtest" + strings.ReplaceAll(time.Now().UTC().Format("150405.000000000"), ".", "")
-	root, err := os.MkdirTemp("", "mycode-jobs-"+id+"-")
+	root, err := os.MkdirTemp("", "mythoscode-jobs-"+id+"-")
 	if err != nil {
 		t.Fatal(err)
 	}

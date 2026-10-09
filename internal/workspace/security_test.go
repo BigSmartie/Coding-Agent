@@ -10,7 +10,7 @@ import (
 
 func TestProtectedPathsRejected(t *testing.T) {
 	cwd := t.TempDir()
-	for _, name := range []string{".env", ".env.local", ".git/config", ".my-code/settings.json", "nested/.mcp.json", "key.pem", "x:stream"} {
+	for _, name := range []string{".env", ".env.local", ".git/config", ".mythos-code/settings.json", "nested/.mcp.json", "key.pem", "x:stream"} {
 		if _, err := Resolve(context.Background(), cwd, name, "read", nil); err == nil {
 			t.Errorf("protected path accepted: %s", name)
 		}

@@ -25,7 +25,7 @@ guesses a model price. An estimate uses provider-reported token counts:
 The adapters normalize input counts to include cached reads and writes. The
 estimator subtracts those cached counts before applying the ordinary input
 rate, so cached tokens are not billed twice. If the provider returns
-inconsistent or total-only usage, MyCode reports the estimate as unavailable.
+inconsistent or total-only usage, MythosCode reports the estimate as unavailable.
 DeepSeek's [automatic context cache](https://api-docs.deepseek.com/news/news0802/)
 reports cache hits without an explicit cache-control request; its OpenAI-style
 `prompt_tokens_details.cached_tokens` is read by the adapter. The opt-in

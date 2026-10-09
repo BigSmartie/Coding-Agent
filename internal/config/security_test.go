@@ -78,7 +78,7 @@ func TestCredentialReferencePersistsWithoutSecretAndBindsOrigin(t *testing.T) {
 
 func TestLegacyCredentialCustomOriginRequiresExplicitBinding(t *testing.T) {
 	IsolateTestEnv(t, t.TempDir())
-	t.Setenv("MY_CODE_PROVIDER", "openai")
+	t.Setenv("MYTHOS_CODE_PROVIDER", "openai")
 	t.Setenv("OPENAI_MODEL", "gpt-test")
 	t.Setenv("OPENAI_API_KEY", "fixture")
 	t.Setenv("OPENAI_BASE_URL", "https://gateway.example.test/v1")
@@ -174,7 +174,7 @@ func TestNewWritesRejectRawSecrets(t *testing.T) {
 func TestUserConfigInsideWorkspaceRejected(t *testing.T) {
 	IsolateTestEnv(t, t.TempDir())
 	cwd := t.TempDir()
-	t.Setenv("MY_CODE_HOME", filepath.Join(cwd, "config"))
+	t.Setenv("MYTHOS_CODE_HOME", filepath.Join(cwd, "config"))
 	if _, err := LoadEffectiveSettings(cwd); err == nil {
 		t.Fatal("workspace config treated as privileged user config")
 	}
@@ -315,7 +315,7 @@ func TestUserConfigNonexistentChildOfWorkspaceLinkRejected(t *testing.T) {
 	if err := os.Symlink(cwd, link); err != nil {
 		t.Skip("symlink creation unavailable")
 	}
-	t.Setenv("MY_CODE_HOME", filepath.Join(link, "not-created"))
+	t.Setenv("MYTHOS_CODE_HOME", filepath.Join(link, "not-created"))
 	if _, err := LoadEffectiveSettings(cwd); err == nil {
 		t.Fatal("workspace config accepted through linked existing ancestor")
 	}

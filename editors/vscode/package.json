@@ -1,7 +1,7 @@
 {
-  "name": "mycode-vscode",
+  "name": "mythoscode-vscode",
   "displayName": "MythosCode",
-  "description": "Open MyCode in the active workspace and prepare file context for review.",
+  "description": "Open MythosCode in the active workspace and prepare file context for review.",
   "version": "0.1.0",
   "publisher": "bigsmartie",
   "repository": {
@@ -15,22 +15,22 @@
   "extensionKind": ["workspace"],
   "main": "./extension.js",
   "activationEvents": [
-    "onCommand:mycode.openWorkspace",
-    "onCommand:mycode.openCurrentFile"
+    "onCommand:mythoscode.openWorkspace",
+    "onCommand:mythoscode.openCurrentFile"
   ],
   "contributes": {
     "commands": [
-      { "command": "mycode.openWorkspace", "title": "MyCode: Open in Workspace" },
-      { "command": "mycode.openCurrentFile", "title": "MyCode: Review Current File" }
+      { "command": "mythoscode.openWorkspace", "title": "MythosCode: Open in Workspace" },
+      { "command": "mythoscode.openCurrentFile", "title": "MythosCode: Review Current File" }
     ],
     "configuration": {
-      "title": "MyCode",
+      "title": "MythosCode",
       "properties": {
-        "mycode.executablePath": {
+        "mythoscode.executablePath": {
           "type": "string",
-          "default": "mycode",
+          "default": "mythoscode",
           "scope": "application",
-          "description": "User-level MyCode executable path. Workspace settings cannot override it."
+          "description": "User-level MythosCode executable path. Workspace settings cannot override it."
         }
       }
     }

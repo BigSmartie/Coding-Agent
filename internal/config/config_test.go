@@ -57,11 +57,11 @@ func TestContextWindowMustBeSetByUserAndWithinBounds(t *testing.T) {
 	if err != nil || runtime.ContextWindowTokens != 100000 {
 		t.Fatalf("configured context window missing: %#v, %v", runtime, err)
 	}
-	t.Setenv("MY_CODE_CONTEXT_WINDOW_TOKENS", "not-a-number")
+	t.Setenv("MYTHOS_CODE_CONTEXT_WINDOW_TOKENS", "not-a-number")
 	if _, err := LoadRuntime(cwd); err == nil {
 		t.Fatal("invalid context window was accepted")
 	}
-	t.Setenv("MY_CODE_CONTEXT_WINDOW_TOKENS", "10000001")
+	t.Setenv("MYTHOS_CODE_CONTEXT_WINDOW_TOKENS", "10000001")
 	if _, err := LoadRuntime(cwd); err == nil {
 		t.Fatal("unbounded context window was accepted")
 	}
@@ -116,8 +116,8 @@ func TestLoadRuntimeParsesOpenAIResponsesSettings(t *testing.T) {
 			"OPENAI_BASE_URL": "https://api.psydo.top",
 			"OPENAI_API_KEY": "test-key",
 			"OPENAI_WIRE_API": "responses",
-			"MY_CODE_REASONING_EFFORT": "xhigh",
-			"MY_CODE_DISABLE_RESPONSE_STORAGE": "true"
+			"MYTHOS_CODE_REASONING_EFFORT": "xhigh",
+			"MYTHOS_CODE_DISABLE_RESPONSE_STORAGE": "true"
 		}
 	}`), 0o644); err != nil {
 		t.Fatal(err)

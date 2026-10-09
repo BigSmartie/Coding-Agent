@@ -84,7 +84,7 @@ func Build(ctx context.Context, args Args) string {
 		home, _ = os.UserHomeDir()
 	}
 	for _, source := range []struct{ path, label string }{
-		{filepath.Join(home, ".my-code", "MEMORY.md"), "Global memory from ~/.my-code/MEMORY.md"},
+		{filepath.Join(home, ".mythos-code", "MEMORY.md"), "Global memory from ~/.mythos-code/MEMORY.md"},
 		{filepath.Join(home, ".claude", "CLAUDE.md"), "Global instructions from ~/.claude/CLAUDE.md"},
 	} {
 		if content := maybeReadUser(args.CWD, source.path); content != "" {
@@ -92,13 +92,13 @@ func Build(ctx context.Context, args Args) string {
 		}
 	}
 	if args.Project.ForWorkspace(args.CWD) {
-		for _, name := range []string{"AGENTS.md", "CLAUDE.md", "MEMORY.md", ".my-code/MEMORY.md"} {
+		for _, name := range []string{"AGENTS.md", "CLAUDE.md", "MEMORY.md", ".mythos-code/MEMORY.md"} {
 			if content, err := args.Project.Expand(name); err == nil && content != "" {
 				parts = append(parts, "Reviewed project instructions from "+name+":\n"+content)
 			}
 		}
 	} else {
-		parts = append(parts, "Project instructions and skills are disabled until the user reviews them using mycode trust workspace.")
+		parts = append(parts, "Project instructions and skills are disabled until the user reviews them using mythoscode trust workspace.")
 	}
 
 	if err := ctx.Err(); err != nil {

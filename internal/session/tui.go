@@ -480,7 +480,7 @@ func (s *Session) homeSections() []tui.InfoSection {
 			Title: "What's new",
 			Body: strings.Join([]string{
 				"Windows TUI input now handles Chinese text and punctuation.",
-				"OpenAI responses API support is wired into MyCode.",
+				"OpenAI responses API support is wired into MythosCode.",
 				"Tool output collapses automatically for cleaner sessions.",
 			}, "\n"),
 		},
@@ -488,7 +488,7 @@ func (s *Session) homeSections() []tui.InfoSection {
 			Title: "Workspace",
 			Body: strings.Join([]string{
 				s.args.CWD,
-				"Project-local config: .my-code",
+				"Project-local config: .mythos-code",
 			}, "\n"),
 		},
 		{

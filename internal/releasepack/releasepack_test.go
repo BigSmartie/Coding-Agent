@@ -9,7 +9,7 @@ import (
 )
 
 func TestArchivesAndSBOMAreReproducible(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "mycode")
+	binary := filepath.Join(t.TempDir(), "mythoscode")
 	if err := os.WriteFile(binary, []byte("test binary"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestArchivesAndSBOMAreReproducible(t *testing.T) {
 }
 
 func TestArchiveRejectsUnsafeVersionAndChecksumSorted(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "mycode")
+	binary := filepath.Join(t.TempDir(), "mythoscode")
 	_ = os.WriteFile(binary, []byte("binary"), 0o600)
 	if _, err := Archive(binary, t.TempDir(), "../escape", "linux", "amd64", 1760000000); err == nil {
 		t.Fatal("unsafe archive path accepted")

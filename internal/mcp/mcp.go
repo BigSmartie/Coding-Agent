@@ -146,7 +146,7 @@ func CreateBackedTools(ctx context.Context, cwd string, servers map[string]confi
 		}
 
 		if opts.Authorize == nil || !opts.Authorize(serverName, serverConfig) {
-			summaries = append(summaries, tools.MCPServerSummary{Name: serverName, Command: serverTarget, Status: "untrusted", Error: "Review with mycode trust mcp <server> before enabling this configuration."})
+			summaries = append(summaries, tools.MCPServerSummary{Name: serverName, Command: serverTarget, Status: "untrusted", Error: "Review with mythoscode trust mcp <server> before enabling this configuration."})
 			continue
 		}
 		var client mcpClient

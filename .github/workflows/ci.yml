@@ -35,7 +35,7 @@ jobs:
       - run: go mod verify
       - run: go vet ./...
       - run: go test -race -count=1 -timeout=5m ./...
-      - run: go build -trimpath -o dist/ ./cmd/mycode
+      - run: go build -trimpath -o dist/ ./cmd/mythoscode
       - name: Verify VS Code integration
         run: node --test editors/vscode/context.test.js
 
@@ -51,11 +51,11 @@ jobs:
           go-version: '1.26.9'
           cache-dependency-path: go.sum
       - name: Prepare explicit test image
-        run: docker build --tag mycode-sandbox-test -f sandbox/Dockerfile.test sandbox
+        run: docker build --tag mythoscode-sandbox-test -f sandbox/Dockerfile.test sandbox
       - name: Verify actual sandbox isolation
         env:
-          MY_CODE_SANDBOX_IMAGE: mycode-sandbox-test
-          MY_CODE_SANDBOX_INTEGRATION: '1'
+          MYTHOS_CODE_SANDBOX_IMAGE: mythoscode-sandbox-test
+          MYTHOS_CODE_SANDBOX_INTEGRATION: '1'
         run: go test -count=1 -timeout=3m ./internal/sandbox ./internal/jobs
 
   fuzz:

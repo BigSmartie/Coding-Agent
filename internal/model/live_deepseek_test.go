@@ -12,11 +12,11 @@ import (
 	"github.com/BigSmartie/Coding-Agent/internal/tools"
 )
 
-// TestLiveDeepSeekToolContinuation uses the user's OS-backed MyCode credential.
+// TestLiveDeepSeekToolContinuation uses the user's OS-backed MythosCode credential.
 // It is opt-in because it sends two billable requests to the configured model.
 func TestLiveDeepSeekToolContinuation(t *testing.T) {
-	if os.Getenv("MY_CODE_LIVE_DEEPSEEK") != "1" {
-		t.Skip("set MY_CODE_LIVE_DEEPSEEK=1 for a billable DeepSeek tool-continuation check")
+	if os.Getenv("MYTHOS_CODE_LIVE_DEEPSEEK") != "1" {
+		t.Skip("set MYTHOS_CODE_LIVE_DEEPSEEK=1 for a billable DeepSeek tool-continuation check")
 	}
 	runtime, err := config.LoadRuntime("")
 	if err != nil {
@@ -60,8 +60,8 @@ func TestLiveDeepSeekToolContinuation(t *testing.T) {
 // DeepSeek credential. DeepSeek caches matching prefixes automatically, unlike
 // Anthropic's explicit cache_control request contract.
 func TestLiveDeepSeekCache(t *testing.T) {
-	if os.Getenv("MY_CODE_LIVE_DEEPSEEK_CACHE") != "1" {
-		t.Skip("set MY_CODE_LIVE_DEEPSEEK_CACHE=1 for two billable DeepSeek cache requests")
+	if os.Getenv("MYTHOS_CODE_LIVE_DEEPSEEK_CACHE") != "1" {
+		t.Skip("set MYTHOS_CODE_LIVE_DEEPSEEK_CACHE=1 for two billable DeepSeek cache requests")
 	}
 	runtime, err := config.LoadRuntime("")
 	if err != nil {

@@ -53,7 +53,7 @@ func Protected(path string) bool {
 			return true
 		}
 		switch part {
-		case ".git", ".my-code", ".mini-code", ".codex", ".agents", ".claude", ".ssh", ".aws", ".azure", ".kube", ".gnupg", ".mcp.json", ".npmrc", ".pypirc", ".netrc", "credentials", "credentials.json", "secrets.json", "id_rsa", "id_ed25519":
+		case ".git", ".mythos-code", ".mini-code", ".codex", ".agents", ".claude", ".ssh", ".aws", ".azure", ".kube", ".gnupg", ".mcp.json", ".npmrc", ".pypirc", ".netrc", "credentials", "credentials.json", "secrets.json", "id_rsa", "id_ed25519":
 			return true
 		}
 		if part == ".env" || strings.HasPrefix(part, ".env.") || strings.HasSuffix(part, ".pem") || strings.HasSuffix(part, ".key") || strings.HasSuffix(part, ".p12") || strings.HasSuffix(part, ".pfx") {
@@ -291,7 +291,7 @@ func (a *Access) WriteFile(path string, data []byte) error {
 		return err
 	}
 	base := filepath.Base(rel)
-	temp := base + ".mycode-write-" + hex.EncodeToString(random[:])
+	temp := base + ".mythoscode-write-" + hex.EncodeToString(random[:])
 	f, err := parentRoot.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return err

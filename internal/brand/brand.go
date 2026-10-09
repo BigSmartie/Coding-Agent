@@ -1,13 +1,13 @@
 package brand
 
 const (
-	AppName         = "MyCode"
-	AgentName       = "mycode"
-	CommandName     = "mycode"
-	ConfigDirName   = ".my-code"
-	EnvPrefix       = "MY_CODE"
-	BinaryName      = "mycode-go"
-	LauncherName    = "mycode"
+	AppName         = "MythosCode"
+	AgentName       = "mythoscode"
+	CommandName     = "mythoscode"
+	ConfigDirName   = ".mythos-code"
+	EnvPrefix       = "MYTHOS_CODE"
+	BinaryName      = "mythoscode-go"
+	LauncherName    = "mythoscode"
 	Version         = "0.1.0-alpha.1"
 	DefaultGPTModel = "gpt-5.5"
 	LegacyAppName   = "MiniCode"

@@ -1,4 +1,4 @@
-# MyCode
+# MythosCode
 
 > Go 版本的 P0 Alpha 基线已经冻结。请先阅读 [最新使用说明](README.md)、
 > [安全边界](SECURITY.md) 和 [P0 验收记录](P0_DEVELOPMENT.md)。下文是历史介绍，
@@ -278,7 +278,7 @@ Notebook 的源代码单元，并在核对 SHA-256 和人工审查差异后修�
 [P2.1 RFC](docs/rfc/p2-1-notebook-editing.md)。
 
 `web_fetch` 可将公开 HTTPS 网页读取为有长度限制的文本。启用 `web_search`
-时，在用户配置 `~/.my-code/settings.json` 中填写可信的 SearXNG JSON 搜索端点：
+时，在用户配置 `~/.mythos-code/settings.json` 中填写可信的 SearXNG JSON 搜索端点：
 
 ```json
 {"webSearchEndpoint":"https://search.example/search"}
@@ -290,7 +290,7 @@ Notebook 的源代码单元，并在核对 SHA-256 和人工审查差异后修�
 详见 [P2.2 RFC](docs/rfc/p2-2-web-tools.md)。
 
 可选的 [VS Code 扩展](editors/vscode/README.md)能在受信任工作区终端启动
-MyCode，并准备当前文件位置供用户检查后提交。详见
+MythosCode，并准备当前文件位置供用户检查后提交。详见
 [P2.3 RFC](docs/rfc/p2-3-vscode-integration.md)。
 
 用户配置可启用 Anthropic Messages 的提示缓存，并填写自己的模型价格以显示
@@ -315,7 +315,7 @@ MyCode，并准备当前文件位置供用户检查后提交。详见
 Windows 上可以显式选择不依赖 Docker 的 WSL2/Bubblewrap 沙箱。默认 WSL2
 发行版需预先安装 `bwrap` 与 `prlimit`；交互式 PTY Job 还需安装
 `/usr/bin/python3`。然后设置
-`MY_CODE_SANDBOX_BACKEND=wsl`。该后端执行 Linux 程序，不直接运行 Windows
+`MYTHOS_CODE_SANDBOX_BACKEND=wsl`。该后端执行 Linux 程序，不直接运行 Windows
 宿主机的 `.exe`。PTY 在隔离的 WSL 客体内创建；缺少所需组件时会拒绝执行。详见
 [P2.5 RFC](docs/rfc/p2-5-wsl-sandbox.md)。
 

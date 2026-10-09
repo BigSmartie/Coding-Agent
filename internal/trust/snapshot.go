@@ -186,7 +186,7 @@ func captureWorkspace(cwd string) (*WorkspaceSnapshot, error) {
 		state[path] = 2
 		return nil
 	}
-	for _, name := range []string{"CLAUDE.md", "AGENTS.md", "MEMORY.md", ".my-code/MEMORY.md"} {
+	for _, name := range []string{"CLAUDE.md", "AGENTS.md", "MEMORY.md", ".mythos-code/MEMORY.md"} {
 		if _, err := access.Lstat(name); os.IsNotExist(err) {
 			continue
 		} else if err != nil {
@@ -234,7 +234,7 @@ func captureWorkspace(cwd string) (*WorkspaceSnapshot, error) {
 		}
 		return nil
 	}
-	for _, path := range []string{".my-code/skills", ".claude/skills"} {
+	for _, path := range []string{".mythos-code/skills", ".claude/skills"} {
 		if err := walk(filepath.FromSlash(path), 0); err != nil {
 			return nil, err
 		}

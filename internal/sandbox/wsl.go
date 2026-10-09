@@ -19,9 +19,9 @@ import (
 )
 
 const (
-	wslScratchEnv = "MYCODE_WSL_SCRATCH"
-	wslTTYEnv     = "MYCODE_WSL_GUEST_TTY"
-	dockerTTYEnv  = "MYCODE_DOCKER_GUEST_TTY"
+	wslScratchEnv = "MYTHOSCODE_WSL_SCRATCH"
+	wslTTYEnv     = "MYTHOSCODE_WSL_GUEST_TTY"
+	dockerTTYEnv  = "MYTHOSCODE_DOCKER_GUEST_TTY"
 )
 
 // prepareWSL uses WSL2 as a Windows-hosted Linux VM and Bubblewrap inside it.
@@ -75,7 +75,7 @@ func prepareWSL(ctx context.Context, options Options) (*exec.Cmd, func(), error)
 			removeSnapshot()
 			return nil, nil, errors.New("retained sandbox job requires a valid session id")
 		}
-		options.jobRoot, err = os.MkdirTemp("", "mycode-jobs-"+options.SessionID+"-")
+		options.jobRoot, err = os.MkdirTemp("", "mythoscode-jobs-"+options.SessionID+"-")
 		if err == nil {
 			options.scratch = filepath.Join(options.jobRoot, "workspace")
 			err = os.Mkdir(options.scratch, 0o777)
@@ -216,7 +216,7 @@ func wslBwrapArgs(options Options, root, snapshotPath, scratchPath string) ([]st
 		// model-controlled command text enters the fixed shell or Python source.
 		bootstrap = `set -eu; cp -R /input/. /workspace/; cd "$1"; shift; exec /usr/bin/python3 -c 'import os,pty,sys; sys.exit(os.waitstatus_to_exitcode(pty.spawn(sys.argv[1:])))' "$@"`
 	}
-	args = append(args, "--", "/bin/sh", "-c", bootstrap, "mycode-sandbox", path.Join("/workspace", filepath.ToSlash(relative)), options.Command)
+	args = append(args, "--", "/bin/sh", "-c", bootstrap, "mythoscode-sandbox", path.Join("/workspace", filepath.ToSlash(relative)), options.Command)
 	return append(args, options.Args...), nil
 }
 

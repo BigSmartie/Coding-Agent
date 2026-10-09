@@ -220,7 +220,7 @@ func (s Store) projectSkills() []Loaded {
 		return nil
 	}
 	var out []Loaded
-	for _, source := range []struct{ prefix, label string }{{".my-code/skills/", "project"}, {".claude/skills/", "compat_project"}} {
+	for _, source := range []struct{ prefix, label string }{{".mythos-code/skills/", "project"}, {".claude/skills/", "compat_project"}} {
 		for _, path := range snapshot.Paths() {
 			if !strings.HasPrefix(path, source.prefix) || !strings.HasSuffix(path, "/SKILL.md") {
 				continue

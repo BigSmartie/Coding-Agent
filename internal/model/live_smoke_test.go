@@ -13,21 +13,21 @@ import (
 
 // TestLiveProviderSmoke is deliberately opt-in and never reads project/user
 // config. It may incur API charges. Supply credentials only in the invocation's
-// environment and explicitly select MY_CODE_SMOKE_PROVIDER/MODEL.
+// environment and explicitly select MYTHOS_CODE_SMOKE_PROVIDER/MODEL.
 func TestLiveProviderSmoke(t *testing.T) {
-	if os.Getenv("MY_CODE_LIVE_SMOKE") != "1" {
-		t.Skip("set MY_CODE_LIVE_SMOKE=1 to opt in to a billable live provider smoke test")
+	if os.Getenv("MYTHOS_CODE_LIVE_SMOKE") != "1" {
+		t.Skip("set MYTHOS_CODE_LIVE_SMOKE=1 to opt in to a billable live provider smoke test")
 	}
-	provider, modelName := os.Getenv("MY_CODE_SMOKE_PROVIDER"), os.Getenv("MY_CODE_SMOKE_MODEL")
+	provider, modelName := os.Getenv("MYTHOS_CODE_SMOKE_PROVIDER"), os.Getenv("MYTHOS_CODE_SMOKE_MODEL")
 	if provider == "" || modelName == "" {
-		t.Fatal("MY_CODE_SMOKE_PROVIDER and MY_CODE_SMOKE_MODEL are required")
+		t.Fatal("MYTHOS_CODE_SMOKE_PROVIDER and MYTHOS_CODE_SMOKE_MODEL are required")
 	}
 	runtime := config.Runtime{Provider: provider, Model: modelName, MaxOutputTokens: 2048, DisableResponseStorage: true}
 	switch provider {
 	case "openai":
 		runtime.APIKey = os.Getenv("OPENAI_API_KEY")
 		runtime.BaseURL = "https://api.openai.com"
-		runtime.WireAPI = os.Getenv("MY_CODE_SMOKE_WIRE_API")
+		runtime.WireAPI = os.Getenv("MYTHOS_CODE_SMOKE_WIRE_API")
 	case "anthropic":
 		runtime.APIKey = os.Getenv("ANTHROPIC_API_KEY")
 		runtime.BaseURL = "https://api.anthropic.com"

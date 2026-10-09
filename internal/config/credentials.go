@@ -50,7 +50,7 @@ func resolveCredential(provider, baseURL, authToken, apiKey string, env map[stri
 		bound := firstNonEmpty(env[prefix+"CREDENTIAL_ORIGIN"], defaultBaseURL(provider))
 		boundOrigin, err := CredentialOrigin(bound)
 		if err != nil || boundOrigin != origin {
-			return "", "", fmt.Errorf("credential origin mismatch: bind %sCREDENTIAL_ORIGIN to the intended HTTPS origin, or run mycode auth login", prefix)
+			return "", "", fmt.Errorf("credential origin mismatch: bind %sCREDENTIAL_ORIGIN to the intended HTTPS origin, or run mythoscode auth login", prefix)
 		}
 		return authToken, apiKey, nil
 	}
@@ -60,7 +60,7 @@ func resolveCredential(provider, baseURL, authToken, apiKey string, env map[stri
 	}
 	boundOrigin, err := CredentialOrigin(ref.Origin)
 	if err != nil || boundOrigin != origin {
-		return "", "", errors.New("stored credential is bound to another origin; run mycode auth login for this endpoint")
+		return "", "", errors.New("stored credential is bound to another origin; run mythoscode auth login for this endpoint")
 	}
 	if ref.ID == "" || (ref.Kind != "api_key" && ref.Kind != "auth_token") {
 		return "", "", errors.New("invalid stored credential reference")
@@ -93,7 +93,7 @@ func validateUserConfigLocation(cwd string) error {
 			return err
 		}
 		if workspace.Within(root, resolved) {
-			return errors.New("user configuration directory is inside the workspace; unset MY_CODE_HOME or choose user settings and Claude compatibility settings outside the workspace")
+			return errors.New("user configuration directory is inside the workspace; unset MYTHOS_CODE_HOME or choose user settings and Claude compatibility settings outside the workspace")
 		}
 	}
 	return nil
@@ -227,7 +227,7 @@ func MigrateProjectCredentials(cwd string, store credentials.Store) error {
 		return err
 	}
 	if user.Provider != "" || user.Model != "" || len(user.Env) != 0 || len(user.Credentials) != 0 {
-		return errors.New("user provider settings already exist; project migration will not overwrite them; choose an empty MY_CODE_HOME outside the workspace or resolve the conflict manually")
+		return errors.New("user provider settings already exist; project migration will not overwrite them; choose an empty MYTHOS_CODE_HOME outside the workspace or resolve the conflict manually")
 	}
 	project, err := readSettings(ProjectSettingsPath(cwd))
 	if err != nil {
@@ -237,7 +237,7 @@ func MigrateProjectCredentials(cwd string, store credentials.Store) error {
 		return errors.New("no legacy provider settings found in the project")
 	}
 	if len(project.Credentials) != 0 {
-		return errors.New("project credential references cannot be imported; use mycode auth login")
+		return errors.New("project credential references cannot be imported; use mythoscode auth login")
 	}
 	if project.Provider != "" && project.Provider != "openai" && project.Provider != "anthropic" {
 		return errors.New("project provider must be openai or anthropic before migration")
@@ -284,7 +284,7 @@ func MigrateProjectCredentials(cwd string, store credentials.Store) error {
 
 func migratableProviderEnv(name string) bool {
 	switch name {
-	case "OPENAI_API_KEY", "OPENAI_AUTH_TOKEN", "OPENAI_BASE_URL", "OPENAI_MODEL", "OPENAI_WIRE_API", "OPENAI_CREDENTIAL_ORIGIN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "ANTHROPIC_CREDENTIAL_ORIGIN", "MY_CODE_PROVIDER", "MY_CODE_MODEL", "MY_CODE_REASONING_EFFORT", "MY_CODE_DISABLE_RESPONSE_STORAGE", "MY_CODE_MAX_OUTPUT_TOKENS":
+	case "OPENAI_API_KEY", "OPENAI_AUTH_TOKEN", "OPENAI_BASE_URL", "OPENAI_MODEL", "OPENAI_WIRE_API", "OPENAI_CREDENTIAL_ORIGIN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "ANTHROPIC_CREDENTIAL_ORIGIN", "MYTHOS_CODE_PROVIDER", "MYTHOS_CODE_MODEL", "MYTHOS_CODE_REASONING_EFFORT", "MYTHOS_CODE_DISABLE_RESPONSE_STORAGE", "MYTHOS_CODE_MAX_OUTPUT_TOKENS":
 		return true
 	default:
 		return false

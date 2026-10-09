@@ -132,7 +132,7 @@ func PrivateWrite(path string, data []byte) error {
 	} else if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	file, err := os.CreateTemp(dir, ".mycode-state-*")
+	file, err := os.CreateTemp(dir, ".mythoscode-state-*")
 	if err != nil {
 		return err
 	}

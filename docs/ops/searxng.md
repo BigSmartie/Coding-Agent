@@ -1,13 +1,13 @@
 # SearXNG endpoint operations
 
-MyCode's configured search endpoint is
+MythosCode's configured search endpoint is
 `https://search.bigsmartie.cn/search`. The Windows user setting
 `webSearchEndpoint` enables it; no search credential or server secret belongs
 in this repository. A live run of `TestLiveSearXNGSearch` returned seven
 results on 2026-10-09.
 
 The user's OpenCloudOS server runs a separate, digest-pinned SearXNG and
-Valkey Compose project at `/opt/mycode-searxng/compose.yml`. SearXNG binds
+Valkey Compose project at `/opt/mythoscode-searxng/compose.yml`. SearXNG binds
 only to `127.0.0.1:18081`; Valkey has no published port. The server secret is
 in a root-only `.env` beside the Compose file. The SearXNG settings enable
 JSON results, its limiter, and search engines reachable from that server.
@@ -24,17 +24,17 @@ Let's Encrypt certificate files live under
 `certbot-renew.timer` is enabled; a deploy hook tests and reloads the existing
 Nginx after renewal. `certbot renew --dry-run --cert-name
 search.bigsmartie.cn` succeeded when the endpoint was installed. The
-challenge webroot is `/opt/mycode-searxng/acme`.
+challenge webroot is `/opt/mythoscode-searxng/acme`.
 
 For a read-only service check on the server, run `docker compose -f
-/opt/mycode-searxng/compose.yml ps` and `systemctl is-active
+/opt/mythoscode-searxng/compose.yml ps` and `systemctl is-active
 certbot-renew.timer`. From an allowed client network, request
 `https://search.bigsmartie.cn/search?q=OpenAI&format=json`; it should return
 HTTP 200, `application/json`, and a nonempty `results` array. The opt-in Go
-acceptance test uses the normal MyCode egress path:
+acceptance test uses the normal MythosCode egress path:
 
 ```powershell
-$env:MY_CODE_LIVE_WEB_SEARCH = "1"
-$env:MY_CODE_WEB_SEARCH_ENDPOINT = "https://search.bigsmartie.cn/search"
+$env:MYTHOS_CODE_LIVE_WEB_SEARCH = "1"
+$env:MYTHOS_CODE_WEB_SEARCH_ENDPOINT = "https://search.bigsmartie.cn/search"
 go test -run '^TestLiveSearXNGSearch$' -count=1 -v ./internal/tools
 ```

@@ -3,12 +3,12 @@
 ## Contract
 
 The optional dependency-free VS Code extension registers **Open in Workspace**
-and **Review Current File** commands. Both start the installed MyCode CLI in an
+and **Review Current File** commands. Both start the installed MythosCode CLI in an
 integrated terminal with the selected local workspace as its working directory.
 The file command adds a single-line, non-submitted prompt identifying the
 active saved file by encoded workspace-relative path and one-based cursor line.
 The user reviews the prompt and presses Enter. No selected source text is sent
-automatically, and the extension does not bypass MyCode's approval gates.
+automatically, and the extension does not bypass MythosCode's approval gates.
 
 The executable path is read from the VS Code user-level setting only. A
 workspace setting cannot replace the command with a repository-controlled

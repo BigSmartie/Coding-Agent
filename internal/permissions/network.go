@@ -36,7 +36,7 @@ func (m *Manager) EnsureWebRequest(ctx context.Context, rawURL string) error {
 		return fmt.Errorf("web request requires interactive approval")
 	}
 	result, err := m.prompt(ctx, Request{
-		Kind: KindNetwork, Summary: "MyCode wants to read an external web URL",
+		Kind: KindNetwork, Summary: "MythosCode wants to read an external web URL",
 		Details: []string{"origin: " + origin, "URL: " + rawURL, "The URL path and query will be sent to this site. Returned content is untrusted."},
 		Scope:   origin + ":web-read",
 		Choices: []Choice{{Key: "n", Label: "deny once (default)", Decision: DecisionDenyOnce}, {Key: "y", Label: "allow this URL once", Decision: DecisionAllowOnce}},
@@ -67,7 +67,7 @@ func (m *Manager) EnsureNetwork(ctx context.Context, origin, method string) erro
 		return fmt.Errorf("Network origin %s requires approval in TTY mode", canonical)
 	}
 	result, err := m.prompt(ctx, Request{
-		Kind: KindNetwork, Summary: "MyCode wants to contact an external HTTPS origin",
+		Kind: KindNetwork, Summary: "MythosCode wants to contact an external HTTPS origin",
 		Details: []string{"origin: " + canonical, "method: " + method, "Redirects and private IP addresses are blocked."}, Scope: canonical,
 		Choices: []Choice{{Key: "n", Label: "deny once (default)", Decision: DecisionDenyOnce}, {Key: "y", Label: "allow once", Decision: DecisionAllowOnce}, {Key: "a", Label: "always allow this exact origin", Decision: DecisionAllowAlways}, {Key: "d", Label: "always deny this exact origin", Decision: DecisionDenyAlways}},
 	})
@@ -102,7 +102,7 @@ func (m *Manager) EnsureRemoteMCP(ctx context.Context, server, operation, endpoi
 		arguments = arguments[:4096] + "…"
 	}
 	result, err := m.prompt(ctx, Request{
-		Kind: KindMCP, Summary: "MyCode wants to call an external MCP server",
+		Kind: KindMCP, Summary: "MythosCode wants to call an external MCP server",
 		Details: []string{"server: " + server, "origin: " + origin, "operation: " + operation, "arguments: " + arguments, "This operation may change external state."},
 		Scope:   server + ":" + operation,
 		Choices: []Choice{{Key: "n", Label: "deny once (default)", Decision: DecisionDenyOnce}, {Key: "y", Label: "allow this call once", Decision: DecisionAllowOnce}},

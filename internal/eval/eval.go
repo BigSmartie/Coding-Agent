@@ -71,7 +71,7 @@ func Run(ctx context.Context, spec Spec, factory ModelFactory) (Report, error) {
 		}
 	}
 	started := time.Now()
-	snapshot, err := os.MkdirTemp("", "mycode-eval-*")
+	snapshot, err := os.MkdirTemp("", "mythoscode-eval-*")
 	if err != nil {
 		return report, err
 	}
@@ -278,7 +278,7 @@ func removeSnapshot(path string) {
 	if err != nil {
 		return
 	}
-	if filepath.Dir(absolute) != tempRoot || !strings.HasPrefix(filepath.Base(absolute), "mycode-eval-") {
+	if filepath.Dir(absolute) != tempRoot || !strings.HasPrefix(filepath.Base(absolute), "mythoscode-eval-") {
 		return
 	}
 	_ = os.RemoveAll(absolute)

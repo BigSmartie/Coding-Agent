@@ -71,9 +71,9 @@ func SBOM(modules []Module, version string, epoch int64) ([]byte, error) {
 		relationships = append(relationships, map[string]string{"spdxElementId": "SPDXRef-DOCUMENT", "relatedSpdxElement": id, "relationshipType": "DESCRIBES"})
 	}
 	document := map[string]any{
-		"spdxVersion": "SPDX-2.3", "dataLicense": "CC0-1.0", "SPDXID": "SPDXRef-DOCUMENT", "name": "mycode-" + version,
-		"documentNamespace": "https://github.com/BigSmartie/Coding-Agent/spdxdocs/mycode-" + version,
-		"creationInfo":      map[string]any{"creators": []string{"Tool: mycode-releasepack"}, "created": time.Unix(epoch, 0).UTC().Format("2006-01-02T15:04:05Z")},
+		"spdxVersion": "SPDX-2.3", "dataLicense": "CC0-1.0", "SPDXID": "SPDXRef-DOCUMENT", "name": "mythoscode-" + version,
+		"documentNamespace": "https://github.com/BigSmartie/Coding-Agent/spdxdocs/mythoscode-" + version,
+		"creationInfo":      map[string]any{"creators": []string{"Tool: mythoscode-releasepack"}, "created": time.Unix(epoch, 0).UTC().Format("2006-01-02T15:04:05Z")},
 		"packages":          packages, "relationships": relationships,
 	}
 	data, err := json.MarshalIndent(document, "", "  ")

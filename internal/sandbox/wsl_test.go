@@ -52,10 +52,10 @@ func TestWSLTTYUsesGuestPTYWithoutInterpolatingCommand(t *testing.T) {
 }
 
 func TestWSLBackendIsolation(t *testing.T) {
-	if runtime.GOOS != "windows" || os.Getenv("MY_CODE_WSL_INTEGRATION") != "1" {
+	if runtime.GOOS != "windows" || os.Getenv("MYTHOS_CODE_WSL_INTEGRATION") != "1" {
 		t.Skip("opt-in Windows WSL2 integration")
 	}
-	t.Setenv("MY_CODE_SANDBOX_BACKEND", "wsl")
+	t.Setenv("MYTHOS_CODE_SANDBOX_BACKEND", "wsl")
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "visible.txt"), []byte("snapshot-data"), 0o600); err != nil {
 		t.Fatal(err)

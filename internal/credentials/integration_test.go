@@ -10,8 +10,8 @@ import (
 // This opt-in test touches only a new random test record, then removes it. It
 // never lists credentials or reads any user/provider credential reference.
 func TestNativeCredentialStoreRoundTrip(t *testing.T) {
-	if os.Getenv("MY_CODE_CREDENTIAL_INTEGRATION") != "1" {
-		t.Skip("set MY_CODE_CREDENTIAL_INTEGRATION=1 to create and remove a synthetic OS credential")
+	if os.Getenv("MYTHOS_CODE_CREDENTIAL_INTEGRATION") != "1" {
+		t.Skip("set MYTHOS_CODE_CREDENTIAL_INTEGRATION=1 to create and remove a synthetic OS credential")
 	}
 	id := "integration-test/" + rand.Text()
 	secret := "synthetic-test-only-" + rand.Text()

@@ -78,7 +78,7 @@ State writes use temporary files, fsync and replacement. Sessions have random
 IDs and a schema version, preserve input/tool history on cancellation, and check
 the workspace on resume. Current system instructions are rebuilt on resume.
 Unix state uses 0700 directories and 0600 files. Windows state inherits the user
-profile's ACL; keep a custom `MY_CODE_HOME` private to that user.
+profile's ACL; keep a custom `MYTHOS_CODE_HOME` private to that user.
 
 Session/history content remains plaintext after redaction. Event journaling,
 cross-process locking, checkpoints, context compaction, bounded background jobs,
@@ -89,6 +89,6 @@ signing requires a tag and GitHub's attestation service.
 
 Automated checks use temporary data, a fake credential store and local HTTP/SSE
 fixtures. Live-provider, actual Docker, and WSL2 integration tests are explicit
-opt-in checks. Native credential tests require `MY_CODE_CREDENTIAL_INTEGRATION=1` and
+opt-in checks. Native credential tests require `MYTHOS_CODE_CREDENTIAL_INTEGRATION=1` and
 create/read/delete only their own random synthetic entry. Passing these checks
 does not establish production security.

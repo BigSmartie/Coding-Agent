@@ -32,8 +32,8 @@ Responses 加密状态和 Anthropic 签名作为协议数据保留。如果签�
 | 构建产物 CLI 冒烟 | 隔离临时配置、mock 模式下 `/help` 和 `/exit` 通过 |
 | Windows 原生凭据库 | 随机合成测试项的写入、读取、删除和删除后查验通过；测试项已清理，未枚举或读取现有凭据 |
 
-本地验收生成了 `dist/mycode.exe`、`dist/mycode-linux-amd64`、
-`dist/mycode-darwin-arm64`；`dist/` 不进入源码仓库。Go module 已统一为
+本地验收生成了 `dist/mythoscode.exe`、`dist/mythoscode-linux-amd64`、
+`dist/mythoscode-darwin-arm64`；`dist/` 不进入源码仓库。Go module 已统一为
 `github.com/BigSmartie/Coding-Agent`。
 
 `.github/workflows/ci.yml` 配置了三平台 Go 检查和 Linux Docker 集成检查，
@@ -44,10 +44,10 @@ Responses 加密状态和 Anthropic 签名作为协议数据保留。如果签�
 
 - 未调用真实模型 API；live smoke 默认跳过，需显式开启并提供用户凭据。
 - Windows 原生凭据库已验证；macOS Keychain / Linux Secret Service 仍需原生验收。
-  原生测试可显式设置 `MY_CODE_CREDENTIAL_INTEGRATION=1` 后运行 credentials 包，
+  原生测试可显式设置 `MYTHOS_CODE_CREDENTIAL_INTEGRATION=1` 后运行 credentials 包，
   仅创建和清理随机合成测试项。macOS 此次仅交叉编译，没有运行原生测试。
 - 现有项目内旧凭据未自动迁移。首次升级可使用
-  `mycode auth migrate --from-project`，新配置使用 `mycode auth login`。
+  `mythoscode auth migrate --from-project`，新配置使用 `mythoscode auth login`。
   迁移冲突会拒绝覆盖，具体步骤见 [README.md](README.md)。
 - 命令与 MCP 需要已启动的 Docker 及本地可信 Linux 镜像，镜像须含 `/bin/sh`、`cp`。
   运行时不拉取镜像，不联网下载依赖；Git 元数据不进入沙箱。

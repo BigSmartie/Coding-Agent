@@ -12,7 +12,7 @@ import (
 func TestDiscoverAndLoadSkill(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
-	root := filepath.Join(cwd, ".my-code", "skills", "demo")
+	root := filepath.Join(cwd, ".mythos-code", "skills", "demo")
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestDiscoverAndLoadSkill(t *testing.T) {
 
 func TestSkillLoadConsumesReviewedSnapshotInsteadOfReopeningFile(t *testing.T) {
 	cwd, home := t.TempDir(), t.TempDir()
-	path := filepath.Join(cwd, ".my-code", "skills", "demo", "SKILL.md")
+	path := filepath.Join(cwd, ".mythos-code", "skills", "demo", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}

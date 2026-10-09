@@ -18,10 +18,10 @@ func (*liveWebApproval) EnsureNetwork(context.Context, string, string) error { r
 // TestLiveSearXNGSearch is opt-in and sends one fixed, non-sensitive query to
 // the explicitly supplied SearXNG endpoint through the normal egress client.
 func TestLiveSearXNGSearch(t *testing.T) {
-	if os.Getenv("MY_CODE_LIVE_WEB_SEARCH") != "1" {
-		t.Skip("set MY_CODE_LIVE_WEB_SEARCH=1 to query a user-owned SearXNG instance")
+	if os.Getenv("MYTHOS_CODE_LIVE_WEB_SEARCH") != "1" {
+		t.Skip("set MYTHOS_CODE_LIVE_WEB_SEARCH=1 to query a user-owned SearXNG instance")
 	}
-	endpoint := os.Getenv("MY_CODE_WEB_SEARCH_ENDPOINT")
+	endpoint := os.Getenv("MYTHOS_CODE_WEB_SEARCH_ENDPOINT")
 	if err := config.ValidateWebSearchEndpoint(endpoint); err != nil {
 		t.Fatal(err)
 	}

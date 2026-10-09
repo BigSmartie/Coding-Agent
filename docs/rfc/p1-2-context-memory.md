@@ -31,9 +31,9 @@ session backup or start a new session to roll back.
 
 ## Layered memory and trust
 
-Global memory comes from `~/.my-code/MEMORY.md` and the existing
+Global memory comes from `~/.mythos-code/MEMORY.md` and the existing
 `~/.claude/CLAUDE.md` compatibility file. Project memory comes from reviewed
-`MEMORY.md`, `.my-code/MEMORY.md`, `AGENTS.md`, and `CLAUDE.md`. A line of the
+`MEMORY.md`, `.mythos-code/MEMORY.md`, `AGENTS.md`, and `CLAUDE.md`. A line of the
 form `@include relative/path.md` expands a nested Markdown file relative to
 its parent. Includes cannot use absolute paths, `..`, symlinks, special files,
 or paths outside their source root. Global memory is limited to 128 files,

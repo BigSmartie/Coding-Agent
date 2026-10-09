@@ -48,7 +48,7 @@ func TestRenderTUIScreenIncludesTranscriptAndPrompt(t *testing.T) {
 		},
 	}, 80, 30)
 	plain := strings.ReplaceAll(tuiAnsiPattern.ReplaceAllString(screen, ""), " ", "")
-	for _, want := range []string{"MyCode", "sessionfeed", "you", "assistant", ">hello", "Entersend"} {
+	for _, want := range []string{"MythosCode", "sessionfeed", "you", "assistant", ">hello", "Entersend"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("screen missing %q:\n%s", want, screen)
 		}
@@ -65,7 +65,7 @@ func TestRenderTUIScreenShowsHomeLayoutWithoutTranscript(t *testing.T) {
 	})
 	screen := s.renderTUIScreen(tuiState{}, 100, 32)
 	plain := tuiAnsiPattern.ReplaceAllString(screen, "")
-	for _, want := range []string{"MyCode", "Welcome back!", "Tips for getting started", "What's new", `Try "fix typecheck errors"`} {
+	for _, want := range []string{"MythosCode", "Welcome back!", "Tips for getting started", "What's new", `Try "fix typecheck errors"`} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("home screen missing %q:\n%s", want, plain)
 		}
@@ -254,7 +254,7 @@ func TestRenderTUIScreenShowsApprovalPanel(t *testing.T) {
 		pendingApproval: &approvalState{
 			request: permissions.Request{
 				Kind:    permissions.KindEdit,
-				Summary: "mycode wants to apply a file modification",
+				Summary: "mythoscode wants to apply a file modification",
 				Details: []string{"target: file.txt", "", "--- a/file.txt\n+++ b/file.txt"},
 				Choices: []permissions.Choice{
 					{Label: "apply once", Decision: permissions.DecisionAllowOnce},

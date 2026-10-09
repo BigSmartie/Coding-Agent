@@ -31,13 +31,13 @@ func Archive(binary, outDir, version, goos, goarch string, epoch int64) (string,
 	if len(data) == 0 || len(data) > 100<<20 {
 		return "", fmt.Errorf("release binary must be 1–100 MiB")
 	}
-	name := "mycode"
+	name := "mythoscode"
 	ext := ".tar.gz"
 	if goos == "windows" {
 		name += ".exe"
 		ext = ".zip"
 	}
-	archiveName := fmt.Sprintf("mycode_%s_%s_%s%s", version, goos, goarch, ext)
+	archiveName := fmt.Sprintf("mythoscode_%s_%s_%s%s", version, goos, goarch, ext)
 	var output bytes.Buffer
 	stamp := time.Unix(epoch, 0).UTC()
 	if goos == "windows" {

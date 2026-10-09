@@ -49,16 +49,16 @@ type Options struct {
 // cleanup must be called after Wait, including startup/handshake failure paths.
 // The caller must supply a context whose cancellation lasts for process lifetime.
 func Prepare(ctx context.Context, options Options) (*exec.Cmd, func(), error) {
-	switch os.Getenv("MY_CODE_SANDBOX_BACKEND") {
+	switch os.Getenv("MYTHOS_CODE_SANDBOX_BACKEND") {
 	case "", "docker":
 	case "wsl":
 		return prepareWSL(ctx, options)
 	default:
 		return nil, nil, errors.New("unsupported sandbox backend; choose docker or wsl explicitly")
 	}
-	image := strings.TrimSpace(os.Getenv("MY_CODE_SANDBOX_IMAGE"))
+	image := strings.TrimSpace(os.Getenv("MYTHOS_CODE_SANDBOX_IMAGE"))
 	if image == "" {
-		return nil, nil, errors.New("sandbox unavailable: set MY_CODE_SANDBOX_IMAGE to an already-installed trusted Linux Docker image; host execution is disabled")
+		return nil, nil, errors.New("sandbox unavailable: set MYTHOS_CODE_SANDBOX_IMAGE to an already-installed trusted Linux Docker image; host execution is disabled")
 	}
 	if strings.HasPrefix(image, "-") || strings.ContainsAny(image, "\x00\r\n\t ") {
 		return nil, nil, errors.New("invalid sandbox image")
@@ -112,13 +112,13 @@ func Prepare(ctx context.Context, options Options) (*exec.Cmd, func(), error) {
 		os.RemoveAll(filepath.Dir(snapshot))
 		return nil, nil, err
 	}
-	name := "mycode-" + hex.EncodeToString(nonce[:])
+	name := "mythoscode-" + hex.EncodeToString(nonce[:])
 	if options.RetainContainer {
 		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`).MatchString(options.SessionID) {
 			os.RemoveAll(filepath.Dir(snapshot))
 			return nil, nil, errors.New("retained sandbox job requires a valid session id")
 		}
-		options.jobRoot, err = os.MkdirTemp("", "mycode-jobs-"+options.SessionID+"-")
+		options.jobRoot, err = os.MkdirTemp("", "mythoscode-jobs-"+options.SessionID+"-")
 		if err != nil {
 			os.RemoveAll(filepath.Dir(snapshot))
 			return nil, nil, err
@@ -224,7 +224,7 @@ func commandArgs(options Options, root, snapshot, image, name string) ([]string,
 		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`).MatchString(options.SessionID) {
 			return nil, errors.New("invalid sandbox session id")
 		}
-		args = append(args, "--label", "mycode.session="+options.SessionID)
+		args = append(args, "--label", "mythoscode.session="+options.SessionID)
 	}
 	keys := make([]string, 0, len(options.Env))
 	for key := range options.Env {
@@ -250,7 +250,7 @@ func commandArgs(options Options, root, snapshot, image, name string) ([]string,
 		// allocates one and bridges it through Docker's ordinary stdin/stdout.
 		bootstrap = `set -eu; cp -R /input/. /workspace/; cd "$1"; shift; exec python3 -c 'import os,pty,sys; sys.exit(os.waitstatus_to_exitcode(pty.spawn(sys.argv[1:])))' "$@"`
 	}
-	args = append(args, "--entrypoint", "/bin/sh", image, "-c", bootstrap, "mycode-sandbox", path.Join("/workspace", filepath.ToSlash(relative)), options.Command)
+	args = append(args, "--entrypoint", "/bin/sh", image, "-c", bootstrap, "mythoscode-sandbox", path.Join("/workspace", filepath.ToSlash(relative)), options.Command)
 	return append(args, options.Args...), nil
 }
 
@@ -260,7 +260,7 @@ func CleanupSessionContainers(ctx context.Context, workspaceRoot, sessionID stri
 	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`).MatchString(sessionID) {
 		return fmt.Errorf("invalid sandbox session id")
 	}
-	if os.Getenv("MY_CODE_SANDBOX_BACKEND") == "wsl" {
+	if os.Getenv("MYTHOS_CODE_SANDBOX_BACKEND") == "wsl" {
 		return cleanupSessionScratch(sessionID)
 	}
 	docker, err := exec.LookPath("docker")
@@ -283,7 +283,7 @@ func CleanupSessionContainers(ctx context.Context, workspaceRoot, sessionID stri
 	}
 	cleanupCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	list := exec.CommandContext(cleanupCtx, docker, "ps", "-aq", "--filter", "label=mycode.session="+sessionID)
+	list := exec.CommandContext(cleanupCtx, docker, "ps", "-aq", "--filter", "label=mythoscode.session="+sessionID)
 	list.Env = HostEnvironment()
 	output := &LimitedBuffer{Limit: 4096}
 	list.Stdout, list.Stderr = output, output
@@ -317,7 +317,7 @@ func cleanupSessionScratch(sessionID string) error {
 	if err != nil {
 		return err
 	}
-	prefix := "mycode-jobs-" + sessionID + "-"
+	prefix := "mythoscode-jobs-" + sessionID + "-"
 	removed := 0
 	for _, entry := range entries {
 		if !strings.HasPrefix(entry.Name(), prefix) {
@@ -364,10 +364,10 @@ func CopyArtifact(ctx context.Context, prepared *exec.Cmd, relative string) ([]b
 			name = prepared.Args[i+1]
 		}
 	}
-	if wslJobScratch(prepared) == "" && !regexp.MustCompile(`^mycode-[a-f0-9]{24}$`).MatchString(name) {
+	if wslJobScratch(prepared) == "" && !regexp.MustCompile(`^mythoscode-[a-f0-9]{24}$`).MatchString(name) {
 		return nil, fmt.Errorf("invalid sandbox container identity")
 	}
-	if filepath.Base(scratch) != "workspace" || !strings.HasPrefix(filepath.Base(filepath.Dir(scratch)), "mycode-jobs-") || !workspace.Within(os.TempDir(), scratch) {
+	if filepath.Base(scratch) != "workspace" || !strings.HasPrefix(filepath.Base(filepath.Dir(scratch)), "mythoscode-jobs-") || !workspace.Within(os.TempDir(), scratch) {
 		return nil, fmt.Errorf("invalid sandbox scratch identity")
 	}
 	access, err := workspace.Open(scratch)
@@ -400,7 +400,7 @@ func jobScratch(prepared *exec.Cmd) string {
 // Docker also enforces a per-file fsize limit; the scan never follows links.
 func CheckJobScratchBounds(prepared *exec.Cmd) error {
 	scratch := jobScratch(prepared)
-	if filepath.Base(scratch) != "workspace" || !strings.HasPrefix(filepath.Base(filepath.Dir(scratch)), "mycode-jobs-") || !workspace.Within(os.TempDir(), scratch) {
+	if filepath.Base(scratch) != "workspace" || !strings.HasPrefix(filepath.Base(filepath.Dir(scratch)), "mythoscode-jobs-") || !workspace.Within(os.TempDir(), scratch) {
 		return fmt.Errorf("invalid job scratch identity")
 	}
 	var total int64
@@ -446,7 +446,7 @@ func makeSnapshot(ctx context.Context, cwd string) (string, error) {
 		return "", err
 	}
 	defer access.Close()
-	containerDirectory, err := os.MkdirTemp("", "mycode-sandbox-")
+	containerDirectory, err := os.MkdirTemp("", "mythoscode-sandbox-")
 	if err != nil {
 		return "", err
 	}
