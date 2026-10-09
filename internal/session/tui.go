@@ -321,14 +321,17 @@ func (s *Session) runAgentForTUI(ctx context.Context, input string, send func(tu
 	}
 	messages := append(s.args.Messages, message.UserMessage(input))
 	next, err := agent.RunTurn(ctx, agent.Args{
-		Model:        s.args.Model,
-		Tools:        s.args.Tools,
-		Messages:     messages,
-		CWD:          s.args.CWD,
-		Permission:   s.args.Permission,
-		OnEvent:      func(event agent.Event) error { return s.journalEvent(turnID, event) },
-		OnModelStart: func() { send(tuiAgentEvent{kind: "model_start"}) },
-		OnTextDelta:  func(content string) { send(tuiAgentEvent{kind: "text_delta", content: safety.Redact(ctx, content)}) },
+		ContextWindowTokens: s.contextWindowTokens(),
+		MaxOutputTokens:     s.maxOutputTokens(),
+		CurrentUserPrompt:   input,
+		Model:               s.args.Model,
+		Tools:               s.args.Tools,
+		Messages:            messages,
+		CWD:                 s.args.CWD,
+		Permission:          s.args.Permission,
+		OnEvent:             func(event agent.Event) error { return s.journalEvent(turnID, event) },
+		OnModelStart:        func() { send(tuiAgentEvent{kind: "model_start"}) },
+		OnTextDelta:         func(content string) { send(tuiAgentEvent{kind: "text_delta", content: safety.Redact(ctx, content)}) },
 		OnProgressMessage: func(content string) {
 			send(tuiAgentEvent{kind: "progress", content: safety.Redact(ctx, content)})
 		},

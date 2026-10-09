@@ -50,6 +50,78 @@ func (s *WorkspaceSnapshot) Paths() []string {
 	return paths
 }
 
+// Expand replaces reviewed @include lines using only bytes in this approved
+// snapshot. It never reads the current workspace after approval.
+func (s *WorkspaceSnapshot) Expand(path string) (string, error) {
+	if s == nil {
+		return "", nil
+	}
+	active := map[string]bool{}
+	var expand func(string, int) (string, error)
+	expand = func(name string, depth int) (string, error) {
+		if depth > 32 || active[name] {
+			return "", fmt.Errorf("project memory include cycle or depth limit")
+		}
+		content, ok := s.files[filepath.ToSlash(name)]
+		if !ok {
+			return "", fmt.Errorf("included project memory is not in the approved snapshot")
+		}
+		active[name] = true
+		defer delete(active, name)
+		var out strings.Builder
+		for _, line := range strings.SplitAfter(content, "\n") {
+			target, included, err := IncludeTarget(strings.TrimSuffix(line, "\n"))
+			if err != nil {
+				return "", err
+			}
+			if !included {
+				out.WriteString(line)
+				continue
+			}
+			child, err := resolveInclude(name, target)
+			if err != nil {
+				return "", err
+			}
+			part, err := expand(child, depth+1)
+			if err != nil {
+				return "", err
+			}
+			out.WriteString("\nIncluded reviewed memory from " + child + ":\n" + part + "\n")
+			if out.Len() > 4<<20 {
+				return "", fmt.Errorf("expanded project memory exceeds size limit")
+			}
+		}
+		return out.String(), nil
+	}
+	return expand(filepath.ToSlash(path), 0)
+}
+
+// IncludeTarget recognizes an explicit, single relative Markdown path.
+func IncludeTarget(line string) (string, bool, error) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "@include ") {
+		return "", false, nil
+	}
+	target := strings.TrimSpace(strings.TrimPrefix(line, "@include "))
+	if target == "" || strings.ContainsAny(target, "\\:\t\r\n") || strings.Contains(target, " ") || filepath.IsAbs(target) || !strings.HasSuffix(strings.ToLower(target), ".md") {
+		return "", true, fmt.Errorf("memory include must be one relative .md path")
+	}
+	for _, part := range strings.Split(target, "/") {
+		if part == "" || part == "." || part == ".." {
+			return "", true, fmt.Errorf("memory include cannot traverse directories")
+		}
+	}
+	return target, true, nil
+}
+
+func resolveInclude(parent, target string) (string, error) {
+	name := filepath.ToSlash(filepath.Clean(filepath.Join(filepath.Dir(parent), filepath.FromSlash(target))))
+	if name == ".." || strings.HasPrefix(name, "../") || filepath.IsAbs(name) {
+		return "", fmt.Errorf("memory include escapes its root")
+	}
+	return name, nil
+}
+
 // Workspace returns no project content unless this exact snapshot is approved.
 func (s Store) Workspace(cwd string) (*WorkspaceSnapshot, error) {
 	snapshot, err := captureWorkspace(cwd)
@@ -74,7 +146,17 @@ func captureWorkspace(cwd string) (*WorkspaceSnapshot, error) {
 	defer access.Close()
 	snapshot := &WorkspaceSnapshot{root: root, files: map[string]string{}}
 	total, entries := 0, 0
-	add := func(path string) error {
+	state := map[string]uint8{}
+	var add func(string, bool, int) error
+	add = func(path string, followIncludes bool, depth int) error {
+		path = filepath.ToSlash(path)
+		if depth > 32 || state[path] == 1 {
+			return fmt.Errorf("project memory include cycle or depth limit")
+		}
+		if state[path] == 2 {
+			return nil
+		}
+		state[path] = 1
 		data, err := readRootFile(access, path, 256<<10)
 		if err != nil {
 			return err
@@ -83,16 +165,34 @@ func captureWorkspace(cwd string) (*WorkspaceSnapshot, error) {
 		if total > 4<<20 || len(snapshot.files) >= 1024 {
 			return fmt.Errorf("project rules exceed size limit")
 		}
-		snapshot.files[filepath.ToSlash(path)] = string(data)
+		snapshot.files[path] = string(data)
+		if followIncludes {
+			for _, line := range strings.Split(string(data), "\n") {
+				target, included, err := IncludeTarget(line)
+				if err != nil {
+					return err
+				}
+				if included {
+					child, err := resolveInclude(path, target)
+					if err != nil {
+						return err
+					}
+					if err := add(child, true, depth+1); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		state[path] = 2
 		return nil
 	}
-	for _, name := range []string{"CLAUDE.md", "AGENTS.md"} {
+	for _, name := range []string{"CLAUDE.md", "AGENTS.md", "MEMORY.md", ".my-code/MEMORY.md"} {
 		if _, err := access.Lstat(name); os.IsNotExist(err) {
 			continue
 		} else if err != nil {
 			return nil, err
 		}
-		if err := add(name); err != nil {
+		if err := add(name, true, 0); err != nil {
 			return nil, err
 		}
 	}
@@ -127,7 +227,7 @@ func captureWorkspace(cwd string) (*WorkspaceSnapshot, error) {
 					return err
 				}
 			} else if child.Name() == "SKILL.md" {
-				if err := add(next); err != nil {
+				if err := add(next, false, 0); err != nil {
 					return err
 				}
 			}
@@ -139,6 +239,8 @@ func captureWorkspace(cwd string) (*WorkspaceSnapshot, error) {
 			return nil, err
 		}
 	}
+	// Project memory is opt-in through the reviewed root MEMORY.md. Its
+	// included nested files are captured by add and covered by the fingerprint.
 	encoded, err := json.Marshal(struct {
 		Version int
 		Root    string

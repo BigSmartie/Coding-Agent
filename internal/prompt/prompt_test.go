@@ -138,3 +138,57 @@ func TestBuildIncludesTypeScriptParityBehaviorRules(t *testing.T) {
 		}
 	}
 }
+
+func TestGlobalMemoryExpandsBoundedNestedInclude(t *testing.T) {
+	cwd, home := t.TempDir(), t.TempDir()
+	root := filepath.Join(home, ".my-code")
+	if err := os.MkdirAll(filepath.Join(root, "notes"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "MEMORY.md"), []byte("global rule\n@include notes/details.md\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "notes", "details.md"), []byte("nested global rule"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := Build(context.Background(), Args{CWD: cwd, Home: home})
+	if !strings.Contains(got, "global rule") || !strings.Contains(got, "nested global rule") {
+		t.Fatalf("global memory include missing: %s", got)
+	}
+	if err := os.WriteFile(filepath.Join(root, "notes", "details.md"), []byte("@include details.md"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got = Build(context.Background(), Args{CWD: cwd, Home: home})
+	if strings.Contains(got, "global rule") {
+		t.Fatal("cyclic global memory was partially imported")
+	}
+}
+
+func TestReviewedProjectMemoryExpandsNestedIncludeInPrompt(t *testing.T) {
+	cwd, home := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cwd, "notes"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cwd, "MEMORY.md"), []byte("project memory\n@include notes/detail.md\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cwd, "notes", "detail.md"), []byte("reviewed nested memory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := trust.Store{Dir: t.TempDir()}
+	hash, _, err := trust.WorkspaceFingerprint(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Grant(cwd, "workspace", hash, hash); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := store.Workspace(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Build(context.Background(), Args{CWD: cwd, Home: home, Project: snapshot})
+	if !strings.Contains(got, "project memory") || !strings.Contains(got, "reviewed nested memory") {
+		t.Fatalf("reviewed memory missing from prompt: %s", got)
+	}
+}

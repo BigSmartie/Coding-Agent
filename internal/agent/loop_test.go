@@ -86,6 +86,32 @@ func TestRunTurnDoesNotExecuteToolWhenIntentCannotBeJournaled(t *testing.T) {
 	}
 }
 
+func TestRunTurnBudgetsBeforeCallingModelAndJournalsCompaction(t *testing.T) {
+	model := &scriptedModel{steps: []message.Step{message.AssistantStep("done", message.ContentFinal, message.Diagnostics{})}}
+	registry := tools.NewRegistry(nil, tools.Metadata{})
+	tooLarge := []message.Message{message.SystemMessage("system"), message.UserMessage(strings.Repeat("large request ", 600))}
+	if _, err := RunTurn(context.Background(), Args{Model: model, Tools: registry, Messages: tooLarge, ContextWindowTokens: 1200, MaxOutputTokens: 200}); err == nil || model.index != 0 {
+		t.Fatalf("model called before budget failure: calls=%d, err=%v", model.index, err)
+	}
+	model.index = 0
+	compacting := []message.Message{
+		message.SystemMessage("system"),
+		message.UserMessage(strings.Repeat("old context ", 600)),
+		message.AssistantMessage("old answer"),
+		message.UserMessage("new request"),
+	}
+	want := errors.New("journal unavailable")
+	_, err := RunTurn(context.Background(), Args{Model: model, Tools: registry, Messages: compacting, ContextWindowTokens: 1800, MaxOutputTokens: 200, CurrentUserPrompt: "new request", OnEvent: func(event Event) error {
+		if event.Kind == "context_compacted" {
+			return want
+		}
+		return nil
+	}})
+	if !errors.Is(err, want) || model.index != 0 {
+		t.Fatalf("model called before durable compaction event: calls=%d, err=%v", model.index, err)
+	}
+}
+
 func TestRunTurnTreatsProgressAsContinuation(t *testing.T) {
 	model := &scriptedModel{steps: []message.Step{
 		message.AssistantStep("working", message.ContentProgress, message.Diagnostics{}),
