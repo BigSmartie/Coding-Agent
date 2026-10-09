@@ -69,6 +69,23 @@ func TestMCPAddParsesProtocolAndEnv(t *testing.T) {
 	}
 }
 
+func TestMCPAddURLRejectsEmbeddedCredentials(t *testing.T) {
+	cwd := t.TempDir()
+	out, handled, err := Handle(context.Background(), cwd, []string{"mcp", "add-url", "remote", "https://example.com/mcp", "--project"})
+	if err != nil || !handled || !strings.Contains(out, "trust mcp remote") {
+		t.Fatalf("remote MCP setup failed: %q, %v", out, err)
+	}
+	servers, err := config.ReadMCPConfig(filepath.Join(cwd, ".mcp.json"))
+	if err != nil || servers["remote"].URL != "https://example.com/mcp" {
+		t.Fatalf("remote URL was not saved: %#v, %v", servers, err)
+	}
+	for _, unsafe := range []string{"http://example.com/mcp", "https://user:secret@example.com/mcp", "https://example.com/mcp?token=secret"} {
+		if _, _, err := Handle(context.Background(), cwd, []string{"mcp", "add-url", "bad", unsafe, "--project"}); err == nil {
+			t.Fatalf("unsafe URL accepted: %s", unsafe)
+		}
+	}
+}
+
 func TestInstallLocalCommand(t *testing.T) {
 	home := t.TempDir()
 	testutil.IsolateEnv(t, home)

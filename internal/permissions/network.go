@@ -3,9 +3,11 @@ package permissions
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/url"
+	"strconv"
 	"strings"
+
+	"github.com/BigSmartie/Coding-Agent/internal/safety"
 )
 
 func canonicalNetworkOrigin(raw string) (string, error) {
@@ -21,10 +23,11 @@ func canonicalNetworkOrigin(raw string) (string, error) {
 		host = "[" + host + "]"
 	}
 	if port := u.Port(); port != "" && port != "443" {
-		if _, err := net.LookupPort("tcp", port); err != nil {
+		number, err := strconv.Atoi(port)
+		if err != nil || number < 1 || number > 65535 {
 			return "", fmt.Errorf("invalid network origin port")
 		}
-		host += ":" + port
+		host += ":" + strconv.Itoa(number)
 	}
 	return "https://" + host, nil
 }
@@ -64,4 +67,33 @@ func (m *Manager) EnsureNetwork(ctx context.Context, origin, method string) erro
 		_ = m.persist()
 	}
 	return fmt.Errorf("Network origin denied: %s", canonical)
+}
+
+// EnsureRemoteMCP approves a single operation against an already trusted
+// remote server. Origin approval alone does not authorize server-side effects.
+func (m *Manager) EnsureRemoteMCP(ctx context.Context, server, operation, endpoint, arguments string) error {
+	origin, err := canonicalNetworkOrigin(endpoint)
+	if err != nil {
+		return err
+	}
+	if m.prompt == nil {
+		return fmt.Errorf("Remote MCP operation %s on %s requires interactive approval", operation, server)
+	}
+	arguments = safety.Redact(ctx, arguments)
+	if len(arguments) > 4096 {
+		arguments = arguments[:4096] + "…"
+	}
+	result, err := m.prompt(ctx, Request{
+		Kind: KindMCP, Summary: "MyCode wants to call an external MCP server",
+		Details: []string{"server: " + server, "origin: " + origin, "operation: " + operation, "arguments: " + arguments, "This operation may change external state."},
+		Scope:   server + ":" + operation,
+		Choices: []Choice{{Key: "n", Label: "deny once (default)", Decision: DecisionDenyOnce}, {Key: "y", Label: "allow this call once", Decision: DecisionAllowOnce}},
+	})
+	if err != nil {
+		return err
+	}
+	if result.Decision != DecisionAllowOnce {
+		return fmt.Errorf("Remote MCP operation denied: %s on %s", operation, server)
+	}
+	return nil
 }

@@ -81,6 +81,22 @@ func (c *remoteClient) protocolName() string {
 	}
 	return "streamable-http"
 }
+func (c *remoteClient) supports(kind string) bool {
+	if c.session == nil || c.session.InitializeResult() == nil || c.session.InitializeResult().Capabilities == nil {
+		return true
+	}
+	capabilities := c.session.InitializeResult().Capabilities
+	switch kind {
+	case "tools":
+		return capabilities.Tools != nil
+	case "resources":
+		return capabilities.Resources != nil
+	case "prompts":
+		return capabilities.Prompts != nil
+	default:
+		return false
+	}
+}
 func (c *remoteClient) health() error {
 	if c.session == nil {
 		return fmt.Errorf("remote MCP is not connected")
@@ -97,6 +113,13 @@ func (c *remoteClient) close() error {
 }
 
 func (c *remoteClient) listTools(ctx context.Context) ([]toolDescriptor, error) {
+	c.toolsChanged.Store(false)
+	success := false
+	defer func() {
+		if !success {
+			c.toolsChanged.Store(true)
+		}
+	}()
 	var out []toolDescriptor
 	cursor := ""
 	seen := map[string]bool{}
@@ -122,7 +145,7 @@ func (c *remoteClient) listTools(ctx context.Context) ([]toolDescriptor, error) 
 			}
 		}
 		if result.NextCursor == "" {
-			c.toolsChanged.Store(false)
+			success = true
 			return out, nil
 		}
 		if seen[result.NextCursor] {
@@ -135,6 +158,13 @@ func (c *remoteClient) listTools(ctx context.Context) ([]toolDescriptor, error) 
 }
 
 func (c *remoteClient) listResources(ctx context.Context) ([]resourceDescriptor, error) {
+	c.resourcesChanged.Store(false)
+	success := false
+	defer func() {
+		if !success {
+			c.resourcesChanged.Store(true)
+		}
+	}()
 	var out []resourceDescriptor
 	cursor := ""
 	seen := map[string]bool{}
@@ -153,7 +183,7 @@ func (c *remoteClient) listResources(ctx context.Context) ([]resourceDescriptor,
 			}
 		}
 		if result.NextCursor == "" {
-			c.resourcesChanged.Store(false)
+			success = true
 			return out, nil
 		}
 		if seen[result.NextCursor] {
@@ -166,6 +196,13 @@ func (c *remoteClient) listResources(ctx context.Context) ([]resourceDescriptor,
 }
 
 func (c *remoteClient) listPrompts(ctx context.Context) ([]promptDescriptor, error) {
+	c.promptsChanged.Store(false)
+	success := false
+	defer func() {
+		if !success {
+			c.promptsChanged.Store(true)
+		}
+	}()
 	var out []promptDescriptor
 	cursor := ""
 	seen := map[string]bool{}
@@ -184,7 +221,7 @@ func (c *remoteClient) listPrompts(ctx context.Context) ([]promptDescriptor, err
 			}
 		}
 		if result.NextCursor == "" {
-			c.promptsChanged.Store(false)
+			success = true
 			return out, nil
 		}
 		if seen[result.NextCursor] {
@@ -221,6 +258,22 @@ func (c *remoteClient) callTool(ctx context.Context, name string, input any) too
 }
 
 func (c *remoteClient) readResource(ctx context.Context, uri string) tools.Result {
+	if c.resourcesChanged.Load() {
+		fresh, err := c.listResources(ctx)
+		if err != nil {
+			return tools.Error(err.Error())
+		}
+		found := false
+		for _, item := range fresh {
+			if item.URI == uri {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return tools.Error("Remote MCP resource was removed; restart to refresh available resources")
+		}
+	}
 	result, err := c.session.ReadResource(ctx, &sdk.ReadResourceParams{URI: uri})
 	if err != nil {
 		return tools.Error(err.Error())
@@ -228,6 +281,22 @@ func (c *remoteClient) readResource(ctx context.Context, uri string) tools.Resul
 	return formatReadResourceResult(result)
 }
 func (c *remoteClient) getPrompt(ctx context.Context, name string, args map[string]string) tools.Result {
+	if c.promptsChanged.Load() {
+		fresh, err := c.listPrompts(ctx)
+		if err != nil {
+			return tools.Error(err.Error())
+		}
+		found := false
+		for _, item := range fresh {
+			if item.Name == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return tools.Error("Remote MCP prompt was removed; restart to refresh available prompts")
+		}
+	}
 	result, err := c.session.GetPrompt(ctx, &sdk.GetPromptParams{Name: name, Arguments: args})
 	if err != nil {
 		return tools.Error(err.Error())

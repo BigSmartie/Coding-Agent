@@ -182,6 +182,8 @@ go run ./cmd/mycode trust workspace
 go run ./cmd/mycode sessions list
 go run ./cmd/mycode mcp list
 go run ./cmd/mycode mcp add fs -- npx server
+go run ./cmd/mycode mcp add-url remote https://example.com/mcp
+go run ./cmd/mycode trust mcp remote
 go run ./cmd/mycode skills list
 ```
 

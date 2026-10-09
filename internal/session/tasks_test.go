@@ -130,6 +130,12 @@ func TestNetworkAuditIsDurableAndRequiresEffectRecovery(t *testing.T) {
 	if _, err := j.Append(Event{Kind: EventNetworkCompleted, Origin: "https://api.example.com", Method: "POST", Status: 200, Bytes: 42}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := j.Append(Event{Kind: EventNetworkRequested, Origin: "https://api.example.com", Method: "DELETE"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.Append(Event{Kind: EventNetworkCompleted, Origin: "https://api.example.com", Method: "DELETE", Status: 204}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := j.Append(Event{Kind: EventNetworkRequested, Origin: "http://internal.invalid", Method: "GET"}); err == nil {
 		t.Fatal("invalid audit origin accepted")
 	}

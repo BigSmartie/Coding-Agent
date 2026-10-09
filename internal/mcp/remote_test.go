@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/tools"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -43,6 +45,30 @@ func TestRemoteMCPModernStreamableHTTP(t *testing.T) {
 	result := client.callTool(ctx, "echo", map[string]any{"text": "hello remote"})
 	if !result.OK || !strings.Contains(result.Output, "hello remote") {
 		t.Fatalf("remote call failed: %#v", result)
+	}
+}
+
+type remoteApprovalPermission struct {
+	testPermission
+	called int
+}
+
+func (p *remoteApprovalPermission) EnsureRemoteMCP(_ context.Context, server, operation, origin, _ string) error {
+	p.called++
+	if server != "fixture" || operation != "echo" || origin != "https://example.com" {
+		return fmt.Errorf("unexpected remote approval scope")
+	}
+	return nil
+}
+
+func TestRemoteCallUsesOperationApproval(t *testing.T) {
+	client := &remoteClient{config: config.MCPServerConfig{URL: "https://example.com/mcp"}}
+	if err := authorizeClientCall(context.Background(), tools.Context{Permission: testPermission{}}, client, "fixture", "echo", []byte(`{}`)); err == nil {
+		t.Fatal("remote call fell back to command approval")
+	}
+	permission := &remoteApprovalPermission{}
+	if err := authorizeClientCall(context.Background(), tools.Context{Permission: permission}, client, "fixture", "echo", []byte(`{}`)); err != nil || permission.called != 1 {
+		t.Fatalf("operation approval not used: %v, calls %d", err, permission.called)
 	}
 }
 

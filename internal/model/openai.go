@@ -507,18 +507,26 @@ func firstNonEmptyString(values ...string) string {
 func openAIUsageToDiagnostics(usage any) message.TokenUsage {
 	switch typed := usage.(type) {
 	case openAIUsage:
+		total := typed.TotalTokens
+		if total == 0 {
+			total = typed.PromptTokens + typed.CompletionTokens
+		}
 		return message.TokenUsage{
 			InputTokens:      typed.PromptTokens,
 			OutputTokens:     typed.CompletionTokens,
-			TotalTokens:      typed.TotalTokens,
+			TotalTokens:      total,
 			CacheReadTokens:  typed.PromptTokensDetails.CachedTokens,
 			CacheWriteTokens: typed.PromptTokensDetails.CacheWriteTokens,
 		}
 	case openAIResponsesUsage:
+		total := typed.TotalTokens
+		if total == 0 {
+			total = typed.InputTokens + typed.OutputTokens
+		}
 		return message.TokenUsage{
 			InputTokens:      typed.InputTokens,
 			OutputTokens:     typed.OutputTokens,
-			TotalTokens:      typed.TotalTokens,
+			TotalTokens:      total,
 			CacheReadTokens:  typed.InputTokensDetails.CachedTokens,
 			CacheWriteTokens: typed.InputTokensDetails.CacheWriteTokens,
 		}

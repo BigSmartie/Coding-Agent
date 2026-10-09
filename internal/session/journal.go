@@ -199,7 +199,7 @@ func (j *Journal) appendLocked(event Event) (uint64, error) {
 	}
 	if isNetworkEvent(event.Kind) {
 		origin, _, err := egress.Origin(event.Origin)
-		if err != nil || origin != event.Origin || (event.Method != "GET" && event.Method != "POST") || event.Bytes < 0 || event.Bytes > egress.MaxResponseBytes || event.Status < 0 || event.Status > 599 {
+		if err != nil || origin != event.Origin || !validNetworkMethod(event.Method) || event.Bytes < 0 || event.Bytes > egress.MaxResponseBytes || event.Status < 0 || event.Status > 599 {
 			return 0, fmt.Errorf("invalid network journal event")
 		}
 	} else if event.Origin != "" || event.Method != "" || event.Status != 0 || event.Bytes != 0 {
@@ -500,7 +500,7 @@ func readEvents(file *os.File, id string) ([]Event, int64, error) {
 		}
 		if isNetworkEvent(event.Kind) {
 			origin, _, err := egress.Origin(event.Origin)
-			if err != nil || origin != event.Origin || (event.Method != "GET" && event.Method != "POST") || event.Bytes < 0 || event.Bytes > egress.MaxResponseBytes || event.Status < 0 || event.Status > 599 {
+			if err != nil || origin != event.Origin || !validNetworkMethod(event.Method) || event.Bytes < 0 || event.Bytes > egress.MaxResponseBytes || event.Status < 0 || event.Status > 599 {
 				return nil, 0, fmt.Errorf("invalid session network event")
 			}
 		} else if event.Origin != "" || event.Method != "" || event.Status != 0 || event.Bytes != 0 {
@@ -568,4 +568,8 @@ func isNetworkEvent(kind EventKind) bool {
 	default:
 		return false
 	}
+}
+
+func validNetworkMethod(method string) bool {
+	return method == "GET" || method == "POST" || method == "DELETE"
 }

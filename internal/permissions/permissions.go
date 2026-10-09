@@ -24,6 +24,7 @@ const (
 	KindCommand Kind = "command"
 	KindEdit    Kind = "edit"
 	KindNetwork Kind = "network"
+	KindMCP     Kind = "mcp"
 )
 
 type Decision string
