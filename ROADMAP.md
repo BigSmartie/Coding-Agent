@@ -88,7 +88,8 @@ attestation service.
   [RFC](docs/rfc/p2-3-vscode-integration.md)
 - P2.4 opt-in prompt caching and user-priced cost visibility: implemented; see
   [RFC](docs/rfc/p2-4-cache-cost.md)
-- native sandbox backends where Docker is unavailable
+- P2.5 Windows Docker-free WSL2/Bubblewrap sandbox backend: implemented; see
+  [RFC](docs/rfc/p2-5-wsl-sandbox.md)
 
 ## Contribution gate
 

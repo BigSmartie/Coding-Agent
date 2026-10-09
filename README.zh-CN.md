@@ -312,6 +312,12 @@ MyCode，并准备当前文件位置供用户检查后提交。详见
 本次运行累计估算。已有的 `maxOutputTokens` 和 `contextWindowTokens` 可控制
 输出及上下文增长。详见 [P2.4 RFC](docs/rfc/p2-4-cache-cost.md)。
 
+Windows 上可以显式选择不依赖 Docker 的 WSL2/Bubblewrap 沙箱。默认 WSL2
+发行版需预先安装 `bwrap` 与 `prlimit`，然后设置
+`MY_CODE_SANDBOX_BACKEND=wsl`。该后端执行 Linux 程序，不直接运行 Windows
+宿主机的 `.exe`；缺少所需组件时会拒绝执行。详见
+[P2.5 RFC](docs/rfc/p2-5-wsl-sandbox.md)。
+
 ## 整体架构
 
 可以把 Go 版看成几层协作的运行时：

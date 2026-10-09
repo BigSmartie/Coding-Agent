@@ -1,6 +1,6 @@
-// Package sandbox executes untrusted programs only in a resource-limited Linux
-// Docker container over a filtered, disposable workspace snapshot. It never
-// falls back to host execution and never downloads an image automatically.
+// Package sandbox executes untrusted programs over a filtered, disposable
+// workspace snapshot in an explicit Docker or Windows WSL2/Bubblewrap backend.
+// It never falls back to host execution or downloads an image automatically.
 package sandbox
 
 import (
@@ -47,6 +47,13 @@ type Options struct {
 // cleanup must be called after Wait, including startup/handshake failure paths.
 // The caller must supply a context whose cancellation lasts for process lifetime.
 func Prepare(ctx context.Context, options Options) (*exec.Cmd, func(), error) {
+	switch os.Getenv("MY_CODE_SANDBOX_BACKEND") {
+	case "", "docker":
+	case "wsl":
+		return prepareWSL(ctx, options)
+	default:
+		return nil, nil, errors.New("unsupported sandbox backend; choose docker or wsl explicitly")
+	}
 	image := strings.TrimSpace(os.Getenv("MY_CODE_SANDBOX_IMAGE"))
 	if image == "" {
 		return nil, nil, errors.New("sandbox unavailable: set MY_CODE_SANDBOX_IMAGE to an already-installed trusted Linux Docker image; host execution is disabled")
@@ -232,6 +239,9 @@ func CleanupSessionContainers(ctx context.Context, workspaceRoot, sessionID stri
 	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`).MatchString(sessionID) {
 		return fmt.Errorf("invalid sandbox session id")
 	}
+	if os.Getenv("MY_CODE_SANDBOX_BACKEND") == "wsl" {
+		return cleanupSessionScratch(sessionID)
+	}
 	docker, err := exec.LookPath("docker")
 	if errors.Is(err, exec.ErrNotFound) {
 		return cleanupSessionScratch(sessionID)
@@ -333,7 +343,7 @@ func CopyArtifact(ctx context.Context, prepared *exec.Cmd, relative string) ([]b
 			name = prepared.Args[i+1]
 		}
 	}
-	if !regexp.MustCompile(`^mycode-[a-f0-9]{24}$`).MatchString(name) {
+	if wslJobScratch(prepared) == "" && !regexp.MustCompile(`^mycode-[a-f0-9]{24}$`).MatchString(name) {
 		return nil, fmt.Errorf("invalid sandbox container identity")
 	}
 	if filepath.Base(scratch) != "workspace" || !strings.HasPrefix(filepath.Base(filepath.Dir(scratch)), "mycode-jobs-") || !workspace.Within(os.TempDir(), scratch) {
@@ -350,6 +360,9 @@ func CopyArtifact(ctx context.Context, prepared *exec.Cmd, relative string) ([]b
 func jobScratch(prepared *exec.Cmd) string {
 	if prepared == nil {
 		return ""
+	}
+	if scratch := wslJobScratch(prepared); scratch != "" {
+		return scratch
 	}
 	for i, arg := range prepared.Args {
 		if arg == "--mount" && i+1 < len(prepared.Args) {
@@ -394,8 +407,8 @@ func CheckJobScratchBounds(prepared *exec.Cmd) error {
 	return err
 }
 
-// HostEnvironment is deliberately small. It supports the installed Docker CLI
-// without handing model credentials, proxy credentials, or loader variables to it.
+// HostEnvironment is deliberately small. It supports the installed Docker or
+// WSL CLI without handing model credentials, proxy credentials, or loaders to it.
 func HostEnvironment() []string {
 	var out []string
 	for _, key := range []string{"PATH", "SystemRoot", "WINDIR", "TEMP", "TMP", "USERPROFILE", "HOME", "LOCALAPPDATA", "APPDATA"} {

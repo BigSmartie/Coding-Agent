@@ -78,7 +78,8 @@ token 估算仍是启发式结果。
   [RFC](docs/rfc/p2-3-vscode-integration.md)
 - P2.4 可选提示缓存与用户定价的成本估算：已实现，参见
   [RFC](docs/rfc/p2-4-cache-cost.md)
-- Docker 不可用时的原生 sandbox backend
+- P2.5 Windows 无 Docker 的 WSL2/Bubblewrap 沙箱后端：已实现，参见
+  [RFC](docs/rfc/p2-5-wsl-sandbox.md)
 
 ## 贡献门槛
 

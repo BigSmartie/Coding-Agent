@@ -142,6 +142,22 @@ never falls back to running a model command on the host. Images should contain
 the offline tools, package caches and MCP server binaries you need, plus
 `/bin/sh` and `cp` for the fixed snapshot bootstrap.
 
+On Windows, a Docker-free backend is available when the default WSL2 Linux
+distribution already has Bubblewrap and `prlimit` installed:
+
+```powershell
+wsl --exec sh -lc 'command -v bwrap && command -v prlimit'
+$env:MY_CODE_SANDBOX_BACKEND = "wsl"
+go run ./cmd/mycode
+```
+
+The WSL backend runs Linux executables inside Bubblewrap, not Windows `.exe`
+files. It fails closed if WSL2 or its required binaries are unavailable. It
+uses the same filtered snapshot, reviewed edits, offline network namespace,
+bounded scratch, and artifact review as Docker. The default remains Docker;
+`MY_CODE_SANDBOX_IMAGE` is not needed for the WSL backend. See the
+[P2.5 RFC](docs/rfc/p2-5-wsl-sandbox.md).
+
 Commands run with no network, a non-root user, a read-only container root,
 limited resources and a filtered workspace snapshot mounted read-only at `/input`.
 The snapshot is copied into a 512 MiB memory-backed `/workspace` for foreground
@@ -284,7 +300,7 @@ The Go runtime is organized around small internal packages:
 - `internal/config`: separate user/project settings and credential origin binding
 - `internal/credentials`: OS credential store backends
 - `internal/trust`: workspace and MCP configuration fingerprints
-- `internal/sandbox`: isolated, disposable Docker execution
+- `internal/sandbox`: isolated, disposable Docker or Windows WSL2 execution
 - `internal/safety`: secret redaction, terminal escaping and atomic state writes
 - `internal/skills`: local `SKILL.md` discovery and installation
 - `internal/mcp`: stdio MCP client and tool wrapping

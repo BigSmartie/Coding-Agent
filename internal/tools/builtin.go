@@ -338,7 +338,7 @@ func patchFileTool() Definition {
 func runCommandTool() Definition {
 	return Definition{
 		Name:        "run_command",
-		Description: "Run an explicitly approved executable with separate arguments in an isolated Linux Docker sandbox without network access. The workspace is a filtered disposable snapshot: command-created files and edits are temporary. Persist changes using reviewed file tools. Requires a preinstalled MY_CODE_SANDBOX_IMAGE; never executes on the host.",
+		Description: "Run an explicitly approved executable with separate arguments in an isolated offline sandbox. Docker is the default; Windows can explicitly use WSL2/Bubblewrap. The workspace is a filtered disposable snapshot: command-created files and edits are temporary. Persist changes using reviewed file tools. Never executes directly on the host.",
 		InputSchema: objectSchema(map[string]any{"command": map[string]any{"type": "string"}, "args": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "cwd": map[string]any{"type": "string"}}, []string{"command"}),
 		Run: func(ctx context.Context, raw json.RawMessage, tc Context) Result {
 			var input struct {

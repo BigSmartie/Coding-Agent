@@ -38,18 +38,21 @@ service needs a backend broker, authenticated users and short-lived tokens.
 - File operations use canonical containment and Go `os.Root` handles, with
   protection for secret/state paths and links. Reviewed edits compare the file
   again before an atomic replacement. Large files, search and diffs are bounded.
-- Commands and stdio MCP run only in a preinstalled Linux Docker image, pinned
-  to its locally inspected image ID for each launch. Host execution is disabled.
-- The container has no network, no host credential environment, no Docker
-  socket, no capabilities, a non-root user, a read-only root and memory/CPU/PID
-  limits. A filtered disposable snapshot is mounted read-only at `/input` and
-  copied into a 512 MiB tmpfs workspace. Docker disk logging is disabled.
+- Commands and stdio MCP run in the default preinstalled Linux Docker image,
+  pinned to its locally inspected image ID for each launch, or in the explicitly
+  selected Windows WSL2/Bubblewrap backend. Direct host execution is disabled.
+- Both backends deny network access and host credential environments, run as a
+  non-root user with a read-only runtime, and copy a filtered disposable
+  snapshot from `/input` into a bounded `/workspace`. Docker also disables
+  disk logging; WSL2 uses process resource limits rather than Docker cgroups.
 - A command cannot persist its edits. The model must use the reviewed file tools
-  for durable changes. Package downloads, network MCP services and Git metadata
-  access are not supported by this P0 backend.
-- The Docker daemon, selected image, OS and current user's profile are trusted
-  components. Keep them patched. The sandbox is not a defense against an attacker
-  who already controls the user's OS account or Docker daemon.
+  for durable changes. Package downloads and Git metadata access are unavailable
+  inside either sandbox; guarded HTTPS and remote MCP use a separate reviewed
+  network path.
+- The Docker daemon and image, or the selected WSL2 distribution and its
+  Bubblewrap binaries, plus the OS and current user's profile are trusted
+  components. Keep them patched. The sandbox is not a defense against an
+  attacker who already controls these components.
 
 ## Transport and output
 
@@ -77,13 +80,14 @@ the workspace on resume. Current system instructions are rebuilt on resume.
 Unix state uses 0700 directories and 0600 files. Windows state inherits the user
 profile's ACL; keep a custom `MY_CODE_HOME` private to that user.
 
-Session/history content remains plaintext after redaction. Full event journaling,
-cross-process locking, encrypted transcripts, checkpoints, context compaction,
-PTY/background execution, network capability grants, broader MCP transports,
-native sandbox backends and signed releases remain later work.
+Session/history content remains plaintext after redaction. Event journaling,
+cross-process locking, checkpoints, context compaction, bounded background jobs,
+network grants, and a Windows WSL2 sandbox backend are implemented. Native
+Windows PTY jobs remain unsupported. Actual release signing requires a tag and
+GitHub's attestation service.
 
 Automated checks use temporary data, a fake credential store and local HTTP/SSE
-fixtures. Live-provider tests and actual Docker integration are explicit opt-in
-checks. Native credential tests require `MY_CODE_CREDENTIAL_INTEGRATION=1` and
+fixtures. Live-provider, actual Docker, and WSL2 integration tests are explicit
+opt-in checks. Native credential tests require `MY_CODE_CREDENTIAL_INTEGRATION=1` and
 create/read/delete only their own random synthetic entry. Passing these checks
 does not establish production security.
