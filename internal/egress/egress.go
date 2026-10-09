@@ -69,12 +69,14 @@ func Origin(raw string) (string, *url.URL, error) {
 	} else if !validDNSHost(host) {
 		return "", nil, fmt.Errorf("invalid outbound hostname")
 	}
-	if port := u.Port(); port != "" && port != "443" {
+	if port := u.Port(); port != "" {
 		value, err := strconv.Atoi(port)
 		if err != nil || value < 1 || value > 65535 {
 			return "", nil, fmt.Errorf("invalid outbound port")
 		}
-		host += ":" + strconv.Itoa(value)
+		if value != 443 {
+			host += ":" + strconv.Itoa(value)
+		}
 	}
 	return "https://" + host, u, nil
 }

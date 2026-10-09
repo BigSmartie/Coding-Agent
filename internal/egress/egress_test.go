@@ -31,6 +31,19 @@ func TestPublicAddressPolicyRejectsSSRFTargets(t *testing.T) {
 	}
 }
 
+func TestOriginCanonicalizesLeadingZeroDefaultPort(t *testing.T) {
+	for _, raw := range []string{"https://example.com:0443/000", "https://example.com:000443/"} {
+		origin, _, err := Origin(raw)
+		if err != nil || origin != "https://example.com" {
+			t.Fatalf("Origin(%q) = %q, %v", raw, origin, err)
+		}
+		canonical, _, err := Origin(origin)
+		if err != nil || canonical != origin {
+			t.Fatalf("origin is not stable: %q => %q, %v", raw, canonical, err)
+		}
+	}
+}
+
 func TestExactOriginGrantAndRedirectDenial(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/redirect" {

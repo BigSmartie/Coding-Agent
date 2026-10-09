@@ -17,7 +17,7 @@ func jobTools() []Definition {
 func jobStartTool() Definition {
 	return Definition{
 		Name:        "job_start",
-		Description: "Start an approved background command in the isolated Docker workspace. Optional tty allocates a container PTY. Jobs are bounded and canceled when the session exits.",
+		Description: "Start an approved background command in the isolated offline sandbox. Docker is the default; Windows can explicitly use WSL2/Bubblewrap for non-PTY jobs. Jobs are bounded and canceled when the session exits.",
 		InputSchema: objectSchema(map[string]any{"command": map[string]any{"type": "string"}, "args": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "cwd": map[string]any{"type": "string"}, "tty": map[string]any{"type": "boolean"}}, []string{"command"}),
 		Run: func(ctx context.Context, raw json.RawMessage, tc Context) Result {
 			if tc.Jobs == nil {
