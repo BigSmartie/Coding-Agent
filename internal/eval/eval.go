@@ -77,7 +77,11 @@ func Run(ctx context.Context, spec Spec, factory ModelFactory) (Report, error) {
 	if err := exportCommit(ctx, spec.Repository, spec.Commit, snapshot); err != nil {
 		return report, err
 	}
-	permission := snapshotPermission{root: snapshot}
+	canonicalSnapshot, err := workspace.Canonical(snapshot)
+	if err != nil {
+		return report, err
+	}
+	permission := snapshotPermission{root: canonicalSnapshot}
 	definitions := []tools.Definition{}
 	for _, definition := range tools.Builtins(snapshot, nil, nil).List() {
 		switch definition.Name {

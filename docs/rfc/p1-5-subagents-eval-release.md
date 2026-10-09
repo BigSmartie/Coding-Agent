@@ -12,6 +12,20 @@ The trace file is stored outside the repository beside session state as `<sessio
 
 Live evaluation is opt-in and may use billable provider calls. The deterministic test fixture uses a scripted model and a temporary Git repository, verifying that the same task mutates only the snapshot and that expected file hashes match. A task manifest should pin a commit from a repository whose contents the evaluator is allowed to read. The evaluation report format is versioned by this RFC; new fields may be added without changing existing meanings.
 
+Example manifest (replace the repository, commit, and digest with your own):
+
+```json
+{
+  "id": "fix-small-bug",
+  "repository": ".",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "prompt": "Fix the parser edge case in internal/parser.go.",
+  "expectedFiles": {"internal/parser.go": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+}
+```
+
+The evaluator reads provider credentials from the user configuration in an empty scope, so repository settings cannot change the selected provider or credential source.
+
 ## Release artifacts and trust
 
 `releasepack` produces stable tar.gz/ZIP archives for Linux, macOS, and Windows on amd64/arm64 from binaries built with `CGO_ENABLED=0`, `-trimpath`, `-buildvcs=false`, and an empty Go build ID. Archive file order, member mode, and timestamps derive from the source commit epoch. A sorted `SHA256SUMS` file and SPDX 2.3 JSON module SBOM accompany the archives. Tests compare independently produced archives byte-for-byte.
