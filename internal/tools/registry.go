@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/BigSmartie/Coding-Agent/internal/egress"
 	"github.com/BigSmartie/Coding-Agent/internal/jobs"
 	"github.com/BigSmartie/Coding-Agent/internal/safety"
 	"github.com/BigSmartie/Coding-Agent/internal/taskstate"
@@ -34,6 +35,7 @@ type Context struct {
 	Permission PermissionManager
 	Tasks      TaskManager
 	Jobs       JobManager
+	Network    *egress.Client
 }
 
 type TaskManager interface {

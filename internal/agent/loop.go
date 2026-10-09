@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/BigSmartie/Coding-Agent/internal/budget"
+	"github.com/BigSmartie/Coding-Agent/internal/egress"
 	"github.com/BigSmartie/Coding-Agent/internal/message"
 	"github.com/BigSmartie/Coding-Agent/internal/tools"
 )
@@ -18,6 +19,7 @@ type Args struct {
 	Permission          tools.PermissionManager
 	Tasks               tools.TaskManager
 	Jobs                tools.JobManager
+	Network             *egress.Client
 	MaxSteps            int
 	ContextWindowTokens int
 	MaxOutputTokens     int
@@ -221,6 +223,7 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 					Permission: args.Permission,
 					Tasks:      args.Tasks,
 					Jobs:       args.Jobs,
+					Network:    args.Network,
 				})
 				sawToolResult = true
 				if !result.OK {

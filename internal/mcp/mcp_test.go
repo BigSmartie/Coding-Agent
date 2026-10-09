@@ -128,6 +128,25 @@ func TestClientFailsClosedAfterTimedOutRequest(t *testing.T) {
 	}
 }
 
+func TestStdioMCPPaginationAndNotifications(t *testing.T) {
+	if os.Getenv("GO_WANT_MCP_HELPER") == "1" {
+		runFakeMCPServer()
+		return
+	}
+	result := CreateBackedTools(context.Background(), t.TempDir(), map[string]config.MCPServerConfig{
+		"paged": {Command: os.Args[0], Args: []string{"-test.run=TestStdioMCPPaginationAndNotifications"}, Env: map[string]any{"GO_WANT_MCP_HELPER": "1", "MCP_TEST_PROTOCOL": "newline-json", "MCP_TEST_PAGINATION": "1"}, Protocol: "newline-json"},
+	}, protocolTestOptions())
+	defer result.Dispose(context.Background())
+	if len(result.Servers) != 1 || result.Servers[0].Status != "connected" || result.Servers[0].ToolCount != 2 {
+		t.Fatalf("paged discovery failed: %#v", result.Servers)
+	}
+	client := &stdioClient{pending: map[int]chan rpcResponse{}}
+	client.readLoop(bufio.NewReader(strings.NewReader("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}\n")), "newline-json", 0)
+	if !client.toolsChanged.Load() {
+		t.Fatal("list change notification was lost")
+	}
+}
+
 func protocolTestOptions() Options {
 	return Options{Authorize: func(string, config.MCPServerConfig) bool { return true }, Prepare: protocolTestPrepare}
 }
@@ -203,6 +222,14 @@ func runFakeMCPServer() {
 				"description": "Say hello",
 				"inputSchema": map[string]any{"type": "object"},
 			}}}
+			if os.Getenv("MCP_TEST_PAGINATION") == "1" {
+				params, _ := msg["params"].(map[string]any)
+				if params["cursor"] == "p2" {
+					result = map[string]any{"tools": []map[string]any{{"name": "second", "inputSchema": map[string]any{"type": "object"}}}}
+				} else {
+					result.(map[string]any)["nextCursor"] = "p2"
+				}
+			}
 		case "resources/list":
 			result = map[string]any{"resources": []map[string]any{{
 				"uri":         "demo://resource",

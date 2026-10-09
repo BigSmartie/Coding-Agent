@@ -471,7 +471,11 @@ func handleMCP(_ context.Context, cwd string, args []string) (string, bool, erro
 		}
 		lines := []string{}
 		for name, server := range servers {
-			lines = append(lines, strings.TrimSpace(name+": "+server.Command+" "+strings.Join(server.Args, " ")))
+			target := strings.TrimSpace(server.Command + " " + strings.Join(server.Args, " "))
+			if server.URL != "" {
+				target = server.URL
+			}
+			lines = append(lines, name+": "+target)
 		}
 		return strings.Join(lines, "\n"), true, nil
 	case "remove":
@@ -533,6 +537,20 @@ func handleMCP(_ context.Context, cwd string, args []string) (string, bool, erro
 		}
 		servers[name] = server
 		return "Added MCP server " + name + " to " + path, true, config.SaveMCPConfig(path, servers)
+	case "add-url":
+		if len(rest) != 3 {
+			return "", true, fmt.Errorf("Use mcp add-url <name> <https-url>.")
+		}
+		server := config.MCPServerConfig{URL: rest[2], Protocol: "streamable-http"}
+		if err := config.ValidateMCPServerConfig(server); err != nil {
+			return "", true, err
+		}
+		servers, err := config.ReadMCPConfig(path)
+		if err != nil {
+			return "", true, err
+		}
+		servers[rest[1]] = server
+		return "Added remote MCP server " + rest[1] + " to " + path + "; review with mycode trust mcp " + rest[1], true, config.SaveMCPConfig(path, servers)
 	}
 	return usage(), true, nil
 }
@@ -560,6 +578,7 @@ func usage() string {
 
 ` + brand.CommandName + ` mcp list [--project]
 ` + brand.CommandName + ` mcp add <name> [--project] -- <command> [args...]
+` + brand.CommandName + ` mcp add-url <name> <https-url> [--project]
 ` + brand.CommandName + ` mcp remove <name> [--project]
 
 ` + brand.CommandName + ` skills list

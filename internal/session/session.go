@@ -13,6 +13,7 @@ import (
 	"github.com/BigSmartie/Coding-Agent/internal/brand"
 	"github.com/BigSmartie/Coding-Agent/internal/commands"
 	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/egress"
 	"github.com/BigSmartie/Coding-Agent/internal/jobs"
 	"github.com/BigSmartie/Coding-Agent/internal/message"
 	"github.com/BigSmartie/Coding-Agent/internal/model"
@@ -41,6 +42,7 @@ type Session struct {
 	args      Args
 	tasks     *TaskTracker
 	jobs      *jobs.Manager
+	network   *egress.Client
 	ownsInput bool
 }
 
@@ -66,7 +68,18 @@ func New(args Args) *Session {
 		_, err := args.Journal.Append(Event{Kind: EventKind(event.Kind), JobID: event.JobID, ToolName: event.Command})
 		return err
 	})
-	return &Session{args: args, tasks: NewTaskTracker(args.Tasks, args.Journal, args.Store.Context), jobs: jobManager, ownsInput: isFile && stdin == os.Stdin}
+	var networkPermission egress.Permission
+	if permission, ok := args.Permission.(egress.Permission); ok {
+		networkPermission = permission
+	}
+	network := &egress.Client{Permission: networkPermission, Audit: func(event egress.Event) error {
+		if args.Journal == nil {
+			return nil
+		}
+		_, err := args.Journal.Append(Event{Kind: EventKind("network_" + event.Phase), Origin: event.Origin, Method: event.Method, Status: event.Status, Bytes: event.Bytes})
+		return err
+	}}
+	return &Session{args: args, tasks: NewTaskTracker(args.Tasks, args.Journal, args.Store.Context), jobs: jobManager, network: network, ownsInput: isFile && stdin == os.Stdin}
 }
 
 func (s *Session) Close() { s.jobs.Close() }
@@ -253,7 +266,7 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 		if err := s.journalEvent(turnID, agent.Event{Kind: string(EventToolStarted), ToolName: call.ToolName}); err != nil {
 			return err
 		}
-		result := s.args.Tools.Execute(ctx, call.ToolName, call.Input, tools.Context{CWD: s.args.CWD, Permission: s.args.Permission, Tasks: s.tasks, Jobs: s.jobs})
+		result := s.args.Tools.Execute(ctx, call.ToolName, call.Input, tools.Context{CWD: s.args.CWD, Permission: s.args.Permission, Tasks: s.tasks, Jobs: s.jobs, Network: s.network})
 		if err := s.journalEvent(turnID, agent.Event{Kind: string(EventToolCompleted), ToolName: call.ToolName}); err != nil {
 			return err
 		}
@@ -298,6 +311,7 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 		Permission:          s.args.Permission,
 		Tasks:               s.tasks,
 		Jobs:                s.jobs,
+		Network:             s.network,
 		OnEvent:             func(event agent.Event) error { return s.journalEvent(turnID, event) },
 		OnProgressMessage: func(content string) {
 			fmt.Fprintln(s.args.Out, "progress: "+content)

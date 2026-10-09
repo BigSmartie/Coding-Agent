@@ -23,6 +23,8 @@ const (
 	KindPath    Kind = "path"
 	KindCommand Kind = "command"
 	KindEdit    Kind = "edit"
+	KindNetwork Kind = "network"
+	KindMCP     Kind = "mcp"
 )
 
 type Decision string
@@ -65,6 +67,8 @@ type Store struct {
 	DeniedCommandPatterns    []string `json:"deniedCommandPatterns,omitempty"`
 	AllowedEditPatterns      []string `json:"allowedEditPatterns,omitempty"`
 	DeniedEditPatterns       []string `json:"deniedEditPatterns,omitempty"`
+	AllowedNetworkOrigins    []string `json:"allowedNetworkOrigins,omitempty"`
+	DeniedNetworkOrigins     []string `json:"deniedNetworkOrigins,omitempty"`
 }
 
 type Manager struct {
@@ -77,6 +81,8 @@ type Manager struct {
 	deniedCommands         map[string]bool
 	allowedEdits           map[string]bool
 	deniedEdits            map[string]bool
+	allowedNetworkOrigins  map[string]bool
+	deniedNetworkOrigins   map[string]bool
 	turnAllowedEdits       map[string]bool
 	turnAllowAllEdits      bool
 }
@@ -108,6 +114,8 @@ func New(workspaceRoot, storePath string, prompt Prompt) (*Manager, error) {
 		deniedCommands:         map[string]bool{},
 		allowedEdits:           map[string]bool{},
 		deniedEdits:            map[string]bool{},
+		allowedNetworkOrigins:  map[string]bool{},
+		deniedNetworkOrigins:   map[string]bool{},
 		turnAllowedEdits:       map[string]bool{},
 	}
 	if err := manager.load(); err != nil {
@@ -143,6 +151,9 @@ func (m *Manager) Summary() []string {
 	}
 	if len(m.allowedEdits) > 0 {
 		summary = append(summary, "trusted edit targets: "+strings.Join(firstKeys(m.allowedEdits, 2), ", "))
+	}
+	if len(m.allowedNetworkOrigins) > 0 {
+		summary = append(summary, "approved network origins: "+strings.Join(firstKeys(m.allowedNetworkOrigins, 4), ", "))
 	}
 	return summary
 }
@@ -382,6 +393,20 @@ func (m *Manager) load() error {
 	addAll(m.deniedCommands, store.DeniedCommandPatterns)
 	addAll(m.allowedEdits, store.AllowedEditPatterns)
 	addAll(m.deniedEdits, store.DeniedEditPatterns)
+	for _, origin := range store.AllowedNetworkOrigins {
+		canonical, err := canonicalNetworkOrigin(origin)
+		if err != nil || canonical != origin {
+			return fmt.Errorf("invalid saved network origin")
+		}
+		m.allowedNetworkOrigins[origin] = true
+	}
+	for _, origin := range store.DeniedNetworkOrigins {
+		canonical, err := canonicalNetworkOrigin(origin)
+		if err != nil || canonical != origin {
+			return fmt.Errorf("invalid saved network origin")
+		}
+		m.deniedNetworkOrigins[origin] = true
+	}
 	return nil
 }
 
@@ -400,6 +425,8 @@ func (m *Manager) persist() error {
 		DeniedCommandPatterns:    keys(m.deniedCommands),
 		AllowedEditPatterns:      keys(m.allowedEdits),
 		DeniedEditPatterns:       keys(m.deniedEdits),
+		AllowedNetworkOrigins:    keys(m.allowedNetworkOrigins),
+		DeniedNetworkOrigins:     keys(m.deniedNetworkOrigins),
 	}
 	bytes, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {

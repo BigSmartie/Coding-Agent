@@ -6,9 +6,12 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/BigSmartie/Coding-Agent/internal/brand"
 	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/egress"
 	"github.com/BigSmartie/Coding-Agent/internal/manage"
 	"github.com/BigSmartie/Coding-Agent/internal/mcp"
 	"github.com/BigSmartie/Coding-Agent/internal/message"
@@ -79,15 +82,31 @@ func run(ctx context.Context, argv []string) error {
 	discoveredSkills, _ := skillStore.Discover(ctx)
 	toolRegistry := tools.Builtins(cwd, nil, skillStore)
 	servers := effectiveSettings.MCPServers
+	var journalRef atomic.Pointer[session.Journal]
+	var networkAuditMu sync.Mutex
+	var pendingNetworkAudits []egress.Event
 	mcpResult := mcp.CreateBackedTools(ctx, cwd, servers, mcp.Options{Authorize: func(name string, server config.MCPServerConfig) bool {
 		fingerprint, err := trust.MCPFingerprint(cwd, name, server)
 		return err == nil && trustStore.Allowed(cwd, "mcp:"+name, fingerprint)
+	}, NetworkAudit: func(event egress.Event) error {
+		networkAuditMu.Lock()
+		defer networkAuditMu.Unlock()
+		current := journalRef.Load()
+		if current == nil {
+			if len(pendingNetworkAudits) >= 1024 {
+				return fmt.Errorf("network audit buffer is full")
+			}
+			pendingNetworkAudits = append(pendingNetworkAudits, event)
+			return nil
+		}
+		_, err := current.Append(session.Event{Kind: session.EventKind("network_" + event.Phase), Origin: event.Origin, Method: event.Method, Status: event.Status, Bytes: event.Bytes})
+		return err
 	}})
 	definitions := append(toolRegistry.List(), mcpResult.Tools...)
 	toolRegistry = tools.NewRegistry(definitions, tools.Metadata{Skills: discoveredSkills, MCPServers: mcpResult.Servers}).WithDisposer(mcpResult.Dispose)
-	defer func() {
-		_ = toolRegistry.Dispose(ctx)
-	}()
+	var disposeToolsOnce sync.Once
+	disposeTools := func() { disposeToolsOnce.Do(func() { _ = toolRegistry.Dispose(ctx) }) }
+	defer disposeTools()
 
 	systemPrompt := prompt.Build(ctx, prompt.Args{
 		CWD:               cwd,
@@ -156,6 +175,22 @@ func run(ctx context.Context, argv []string) error {
 		}
 		sessionTasks = record.Tasks
 	}
+	networkAuditMu.Lock()
+	for _, event := range pendingNetworkAudits {
+		if _, err := journal.Append(session.Event{Kind: session.EventKind("network_" + event.Phase), Origin: event.Origin, Method: event.Method, Status: event.Status, Bytes: event.Bytes}); err != nil {
+			networkAuditMu.Unlock()
+			return err
+		}
+	}
+	pendingNetworkAudits = nil
+	journalRef.Store(journal)
+	networkAuditMu.Unlock()
+	defer func() {
+		networkAuditMu.Lock()
+		journalRef.Store(nil)
+		networkAuditMu.Unlock()
+	}()
+	defer disposeTools() // remote DELETE cleanup is audited before journal close
 
 	app := session.New(session.Args{
 		CWD:        cwd,

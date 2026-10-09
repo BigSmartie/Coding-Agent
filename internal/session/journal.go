@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/BigSmartie/Coding-Agent/internal/egress"
 	"github.com/BigSmartie/Coding-Agent/internal/safety"
 	"github.com/BigSmartie/Coding-Agent/internal/taskstate"
 )
@@ -43,6 +44,9 @@ const (
 	EventJobCanceled        EventKind = "job_canceled"
 	EventJobInput           EventKind = "job_input"
 	EventJobCancelRequested EventKind = "job_cancel_requested"
+	EventNetworkRequested   EventKind = "network_requested"
+	EventNetworkCompleted   EventKind = "network_completed"
+	EventNetworkFailed      EventKind = "network_failed"
 	EventCheckpoint         EventKind = "checkpoint"
 )
 
@@ -63,6 +67,10 @@ type Event struct {
 	TurnID        string          `json:"turnId,omitempty"`
 	CallID        string          `json:"callId,omitempty"`
 	JobID         string          `json:"jobId,omitempty"`
+	Origin        string          `json:"origin,omitempty"`
+	Method        string          `json:"method,omitempty"`
+	Status        int             `json:"status,omitempty"`
+	Bytes         int             `json:"bytes,omitempty"`
 	ToolName      string          `json:"toolName,omitempty"`
 	Decision      string          `json:"decision,omitempty"`
 	Compacted     bool            `json:"compacted,omitempty"`
@@ -189,6 +197,14 @@ func (j *Journal) appendLocked(event Event) (uint64, error) {
 	} else if event.JobID != "" {
 		return 0, fmt.Errorf("unexpected job id in journal event")
 	}
+	if isNetworkEvent(event.Kind) {
+		origin, _, err := egress.Origin(event.Origin)
+		if err != nil || origin != event.Origin || !validNetworkMethod(event.Method) || event.Bytes < 0 || event.Bytes > egress.MaxResponseBytes || event.Status < 0 || event.Status > 599 {
+			return 0, fmt.Errorf("invalid network journal event")
+		}
+	} else if event.Origin != "" || event.Method != "" || event.Status != 0 || event.Bytes != 0 {
+		return 0, fmt.Errorf("unexpected network payload in journal event")
+	}
 	if event.Kind == EventTaskUpdated {
 		if event.Task == nil {
 			return 0, fmt.Errorf("task update event has no task")
@@ -209,6 +225,9 @@ func (j *Journal) appendLocked(event Event) (uint64, error) {
 	event.TurnID = safety.Redact(j.store.Context, event.TurnID)
 	event.CallID = safety.Redact(j.store.Context, event.CallID)
 	event.JobID = safety.Redact(j.store.Context, event.JobID)
+	if safety.Redact(j.store.Context, event.Origin) != event.Origin {
+		return 0, fmt.Errorf("network origin contains a secret")
+	}
 	event.ToolName = safety.Redact(j.store.Context, event.ToolName)
 	event.Decision = safety.Redact(j.store.Context, event.Decision)
 	event.PrevHash = j.hash
@@ -279,7 +298,7 @@ func (j *Journal) RecoverInterrupted(acknowledgeEffects bool) (Record, error) {
 		if event.Sequence <= record.JournalSequence {
 			continue
 		}
-		if event.Kind == EventToolStarted || event.Kind == EventApprovalDecided || event.Kind == EventJobStarted || event.Kind == EventJobInput || event.Kind == EventJobCancelRequested {
+		if event.Kind == EventToolStarted || event.Kind == EventApprovalDecided || event.Kind == EventJobStarted || event.Kind == EventJobInput || event.Kind == EventJobCancelRequested || event.Kind == EventNetworkRequested {
 			effects = true
 		}
 	}
@@ -479,6 +498,14 @@ func readEvents(file *os.File, id string) ([]Event, int64, error) {
 		} else if event.JobID != "" {
 			return nil, 0, fmt.Errorf("unexpected job id in session journal")
 		}
+		if isNetworkEvent(event.Kind) {
+			origin, _, err := egress.Origin(event.Origin)
+			if err != nil || origin != event.Origin || !validNetworkMethod(event.Method) || event.Bytes < 0 || event.Bytes > egress.MaxResponseBytes || event.Status < 0 || event.Status > 599 {
+				return nil, 0, fmt.Errorf("invalid session network event")
+			}
+		} else if event.Origin != "" || event.Method != "" || event.Status != 0 || event.Bytes != 0 {
+			return nil, 0, fmt.Errorf("unexpected network payload in session journal")
+		}
 		events = append(events, event)
 		previousHash = event.Hash
 		validBytes += int64(len(line))
@@ -517,7 +544,8 @@ func validEventKind(kind EventKind) bool {
 	case EventTurnStarted, EventModelStarted, EventModelCompleted, EventModelFailed,
 		EventToolStarted, EventToolCompleted, EventApprovalRequested, EventApprovalDecided,
 		EventTurnCompleted, EventTurnFailed, EventTurnAbandoned, EventContextCompacted, EventTaskUpdated, EventCheckpoint,
-		EventJobStarted, EventJobCompleted, EventJobFailed, EventJobCanceled, EventJobInput, EventJobCancelRequested:
+		EventJobStarted, EventJobCompleted, EventJobFailed, EventJobCanceled, EventJobInput, EventJobCancelRequested,
+		EventNetworkRequested, EventNetworkCompleted, EventNetworkFailed:
 		return true
 	default:
 		return false
@@ -531,4 +559,17 @@ func isJobEvent(kind EventKind) bool {
 	default:
 		return false
 	}
+}
+
+func isNetworkEvent(kind EventKind) bool {
+	switch kind {
+	case EventNetworkRequested, EventNetworkCompleted, EventNetworkFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+func validNetworkMethod(method string) bool {
+	return method == "GET" || method == "POST" || method == "DELETE"
 }
