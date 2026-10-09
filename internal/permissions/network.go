@@ -3,33 +3,17 @@ package permissions
 import (
 	"context"
 	"fmt"
-	"net/url"
-	"strconv"
-	"strings"
 
+	"github.com/BigSmartie/Coding-Agent/internal/egress"
 	"github.com/BigSmartie/Coding-Agent/internal/safety"
 )
 
 func canonicalNetworkOrigin(raw string) (string, error) {
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Path != "" || u.RawPath != "" || u.RawQuery != "" || u.Fragment != "" {
+	origin, u, err := egress.Origin(raw)
+	if err != nil || u.Path != "" || u.RawPath != "" || u.RawQuery != "" || u.Fragment != "" {
 		return "", fmt.Errorf("network grant must be an exact HTTPS origin")
 	}
-	host := strings.ToLower(u.Hostname())
-	if strings.HasSuffix(host, ".") {
-		return "", fmt.Errorf("network origin cannot have a trailing dot")
-	}
-	if strings.Contains(host, ":") {
-		host = "[" + host + "]"
-	}
-	if port := u.Port(); port != "" && port != "443" {
-		number, err := strconv.Atoi(port)
-		if err != nil || number < 1 || number > 65535 {
-			return "", fmt.Errorf("invalid network origin port")
-		}
-		host += ":" + strconv.Itoa(number)
-	}
-	return "https://" + host, nil
+	return origin, nil
 }
 
 // EnsureNetwork grants a single HTTPS origin; paths and subdomains are never

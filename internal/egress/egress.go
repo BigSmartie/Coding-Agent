@@ -61,7 +61,13 @@ func Origin(raw string) (string, *url.URL, error) {
 		return "", nil, fmt.Errorf("invalid outbound hostname")
 	}
 	if strings.Contains(host, ":") {
+		ip, err := netip.ParseAddr(host)
+		if err != nil || !ip.Is6() || ip.Zone() != "" {
+			return "", nil, fmt.Errorf("invalid outbound IPv6 hostname")
+		}
 		host = "[" + host + "]"
+	} else if !validDNSHost(host) {
+		return "", nil, fmt.Errorf("invalid outbound hostname")
 	}
 	if port := u.Port(); port != "" && port != "443" {
 		value, err := strconv.Atoi(port)
@@ -71,6 +77,23 @@ func Origin(raw string) (string, *url.URL, error) {
 		host += ":" + strconv.Itoa(value)
 	}
 	return "https://" + host, u, nil
+}
+
+func validDNSHost(host string) bool {
+	if host == "" || len(host) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, ch := range label {
+			if (ch < 'a' || ch > 'z') && (ch < '0' || ch > '9') && ch != '-' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // Fetch permits only GET and POST. The caller may choose Accept and
