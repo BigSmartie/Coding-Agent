@@ -26,6 +26,12 @@ The adapters normalize input counts to include cached reads and writes. The
 estimator subtracts those cached counts before applying the ordinary input
 rate, so cached tokens are not billed twice. If the provider returns
 inconsistent or total-only usage, MyCode reports the estimate as unavailable.
+DeepSeek's [automatic context cache](https://api-docs.deepseek.com/news/news0802/)
+reports cache hits without an explicit cache-control request; its OpenAI-style
+`prompt_tokens_details.cached_tokens` is read by the adapter. The opt-in
+`TestLiveDeepSeekCache` checks a fresh prefix miss followed by a hit using the
+configured DeepSeek credential. It is a separate live acceptance from the
+Anthropic-specific `cache_control` and cache-write check.
 Plain mode reports the current turn; the TUI shows an accumulated estimate for
 the current process run. These are approximate informational values, not
 billing records or a hard spend limit. Existing `maxOutputTokens` and

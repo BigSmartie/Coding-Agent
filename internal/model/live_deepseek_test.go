@@ -55,3 +55,41 @@ func TestLiveDeepSeekToolContinuation(t *testing.T) {
 	}
 	t.Logf("DeepSeek tool continuation passed; usage first=%d second=%d tokens", first.Diagnostics.Usage.TotalTokens, second.Diagnostics.Usage.TotalTokens)
 }
+
+// TestLiveDeepSeekCache verifies a real cached-prefix read using the configured
+// DeepSeek credential. DeepSeek caches matching prefixes automatically, unlike
+// Anthropic's explicit cache_control request contract.
+func TestLiveDeepSeekCache(t *testing.T) {
+	if os.Getenv("MY_CODE_LIVE_DEEPSEEK_CACHE") != "1" {
+		t.Skip("set MY_CODE_LIVE_DEEPSEEK_CACHE=1 for two billable DeepSeek cache requests")
+	}
+	runtime, err := config.LoadRuntime("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin, err := config.CredentialOrigin(runtime.BaseURL)
+	if err != nil || runtime.Provider != "openai" || origin != "https://api.deepseek.com" || runtime.APIKey == "" || runtime.WireAPI == "responses" {
+		t.Fatal("live test requires a configured DeepSeek OpenAI Chat Completions credential")
+	}
+	runtime.MaxOutputTokens = 2048
+	adapter, err := NewFromRuntime(runtime, tools.NewRegistry(nil, tools.Metadata{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	static := "Cache validation " + time.Now().UTC().Format(time.RFC3339Nano) + "\n" + strings.Repeat("one two three four five six seven eight. ", 1100)
+	history := []message.Message{message.SystemMessage(static), message.UserMessage("Reply with OK.")}
+	var usage [2]message.TokenUsage
+	for i := range usage {
+		ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+		step, err := adapter.(message.StreamingModel).NextStream(ctx, history, func(string) {})
+		cancel()
+		if err != nil {
+			t.Fatal(err)
+		}
+		usage[i] = step.Diagnostics.Usage
+	}
+	if usage[1].CacheReadTokens <= usage[0].CacheReadTokens {
+		t.Fatalf("DeepSeek did not report a new cached-prefix hit: first=%+v second=%+v", usage[0], usage[1])
+	}
+	t.Logf("DeepSeek cache hit verified: first=%d second=%d cached input tokens", usage[0].CacheReadTokens, usage[1].CacheReadTokens)
+}

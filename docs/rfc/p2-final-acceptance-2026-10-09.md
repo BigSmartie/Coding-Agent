@@ -6,6 +6,7 @@ remaining checks that can run with the services available on the Windows host.
 | Scenario | Result | Evidence |
 | --- | --- | --- |
 | DeepSeek `deepseek-v4-pro` streaming tool call and continuation | Passed | Opt-in `TestLiveDeepSeekToolContinuation`, using the OS credential store; no key in source or logs. |
+| DeepSeek automatic context-cache hit | Passed | Opt-in `TestLiveDeepSeekCache`: a fresh repeated prefix produced 0 cached input tokens on the first request and 9,984 on the second, using the OS credential store. |
 | Windows Docker Linux-container PTY, isolation, cancellation, artifact | Passed | `TestIntegrationBackgroundJobPTYCancelAndArtifact` and sandbox integration suite on Docker Desktop 29.5.2, with a locally available trusted Python image. |
 | WSL2 guest PTY, sustained job, artifact, cancellation | Passed | `TestIntegrationWSLGuestPTY` on the local Windows/WSL2 host. |
 | Checkpoint, crash replay, interrupted tool recovery, durable task | Passed | Focused `internal/session` journal and task tests. |
@@ -30,8 +31,8 @@ acceptance needs external prerequisites:
 
 * Anthropic cache: no Anthropic credential is configured. The optional
   `TestLiveAnthropicCache` in `internal/model` remains available when one is.
-  DeepSeek's automatic prefix cache is a different provider feature and does
-  not satisfy the Anthropic cache acceptance.
+  DeepSeek's separately verified automatic prefix cache does not exercise the
+  Anthropic `cache_control` request or its cache-write usage field.
 * VS Code Marketplace: the package is ready for publisher identity review,
   but there is no Marketplace publisher account or publishing credential on
   this host. The VSIX can be installed locally now; Marketplace publication
