@@ -80,7 +80,8 @@ attestation service.
 
 ## P2: Optional product breadth
 
-- notebook editing
+- P2.1 reviewed Jupyter notebook cell editing: implemented; see
+  [RFC](docs/rfc/p2-1-notebook-editing.md)
 - built-in web search/fetch beyond MCP and controlled network profiles
 - richer IDE integrations
 - advanced prompt caching and cost optimization

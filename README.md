@@ -155,6 +155,11 @@ or MCP are temporary.** Use approved `write_file`, `edit_file`, `modify_file` an
 files and links are excluded; Git history/remote operations are unavailable in
 this P0 snapshot mode. Installing dependencies over the network is unavailable.
 
+Jupyter notebooks can be inspected with `read_notebook` and changed one source
+cell at a time with `edit_notebook_cell`. An edit requires the cell's SHA-256
+from the read result and a reviewed file diff; changed code cells lose their
+saved outputs and execution count. See the [P2.1 RFC](docs/rfc/p2-1-notebook-editing.md).
+
 Review project instructions and each MCP configuration before enabling them:
 
 ```text
