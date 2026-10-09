@@ -16,6 +16,35 @@ func canonicalNetworkOrigin(raw string) (string, error) {
 	return origin, nil
 }
 
+// EnsureWebRequest requires a fresh approval of the complete URL before a
+// model-triggered web read. An origin grant alone cannot approve arbitrary
+// paths or query strings, which may disclose data to that origin.
+func (m *Manager) EnsureWebRequest(ctx context.Context, rawURL string) error {
+	if len(rawURL) == 0 || len(rawURL) > 2048 {
+		return fmt.Errorf("web URL must be 1–2048 bytes")
+	}
+	origin, _, err := egress.Origin(rawURL)
+	if err != nil {
+		return err
+	}
+	if m.prompt == nil {
+		return fmt.Errorf("web request requires interactive approval")
+	}
+	result, err := m.prompt(ctx, Request{
+		Kind: KindNetwork, Summary: "MyCode wants to read an external web URL",
+		Details: []string{"origin: " + origin, "URL: " + safety.Redact(ctx, rawURL), "The URL path and query will be sent to this site. Returned content is untrusted."},
+		Scope:   origin + ":web-read",
+		Choices: []Choice{{Key: "n", Label: "deny once (default)", Decision: DecisionDenyOnce}, {Key: "y", Label: "allow this URL once", Decision: DecisionAllowOnce}},
+	})
+	if err != nil {
+		return err
+	}
+	if result.Decision != DecisionAllowOnce {
+		return fmt.Errorf("web request denied: %s", origin)
+	}
+	return nil
+}
+
 // EnsureNetwork grants a single HTTPS origin; paths and subdomains are never
 // implicitly included in a persisted grant.
 func (m *Manager) EnsureNetwork(ctx context.Context, origin, method string) error {

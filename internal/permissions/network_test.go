@@ -78,3 +78,46 @@ func TestRemoteMCPRequiresFreshOperationApproval(t *testing.T) {
 		}
 	}
 }
+
+func TestWebReadReviewsFullURLForEveryRequest(t *testing.T) {
+	count := 0
+	manager, err := New(t.TempDir(), filepath.Join(t.TempDir(), "permissions.json"), func(_ context.Context, request Request) (PromptResult, error) {
+		count++
+		if request.Kind != KindNetwork || request.Scope != "https://example.com:web-read" || !strings.Contains(strings.Join(request.Details, " "), "https://example.com/search?q=topic") || len(request.Choices) != 2 {
+			t.Fatalf("unsafe web approval: %#v", request)
+		}
+		return PromptResult{Decision: DecisionAllowOnce}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := manager.EnsureWebRequest(context.Background(), "https://example.com/search?q=topic"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if count != 2 {
+		t.Fatalf("web request review was cached: %d", count)
+	}
+	manager.SetPrompt(nil)
+	if err := manager.EnsureWebRequest(context.Background(), "https://example.com/search?q=topic"); err == nil {
+		t.Fatal("headless web request was allowed")
+	}
+}
+
+func TestWebReadRedactsKnownSecretsInApproval(t *testing.T) {
+	manager, err := New(t.TempDir(), filepath.Join(t.TempDir(), "permissions.json"), func(_ context.Context, request Request) (PromptResult, error) {
+		details := strings.Join(request.Details, " ")
+		if strings.Contains(details, "secret-value") || !strings.Contains(details, "[REDACTED]") {
+			t.Fatalf("secret appeared in URL approval: %s", details)
+		}
+		return PromptResult{Decision: DecisionDenyOnce}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := safety.WithSecrets(context.Background(), "secret-value")
+	if err := manager.EnsureWebRequest(ctx, "https://example.com/search?q=secret-value"); err == nil {
+		t.Fatal("denied URL was allowed")
+	}
+}

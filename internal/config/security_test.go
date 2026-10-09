@@ -191,6 +191,20 @@ func TestCredentialOriginCanonicalization(t *testing.T) {
 	}
 }
 
+func TestWebSearchEndpointIsUserOnlyAndHTTPS(t *testing.T) {
+	for _, raw := range []string{"http://search.example/search", "https://search.example/search?q=leak", "https://user:pass@search.example/search", "https://search.example/other", "https://search.example/search#fragment"} {
+		if err := ValidateWebSearchEndpoint(raw); err == nil {
+			t.Fatalf("unsafe search endpoint accepted: %s", raw)
+		}
+	}
+	if err := ValidateWebSearchEndpoint("https://search.example/prefix/search"); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateProjectSettings(Settings{WebSearchEndpoint: "https://search.example/search"}); err == nil {
+		t.Fatal("project search endpoint override accepted")
+	}
+}
+
 func TestProjectMigrationStoresCredentialsBeforeClearingProject(t *testing.T) {
 	IsolateTestEnv(t, t.TempDir())
 	cwd := t.TempDir()

@@ -25,6 +25,7 @@ func Builtins(cwd string, permission PermissionManager, skillLoader SkillLoader)
 		readFileTool(),
 		readNotebookTool(),
 		editNotebookCellTool(),
+		webFetchTool(),
 		writeFileTool(),
 		modifyFileTool(),
 		editFileTool(),

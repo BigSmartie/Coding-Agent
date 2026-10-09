@@ -72,7 +72,8 @@ token 估算仍是启发式结果。
 
 - P2.1 经审查的 Jupyter Notebook 单元编辑：已实现，参见
   [RFC](docs/rfc/p2-1-notebook-editing.md)
-- MCP 与受控网络之外的内置 Web Search/Fetch
+- P2.2 内置、逐 URL 审批的 Web Search/Fetch：已实现，参见
+  [RFC](docs/rfc/p2-2-web-tools.md)
 - 更丰富的 IDE 集成
 - 高级 prompt caching 与成本优化
 - Docker 不可用时的原生 sandbox backend

@@ -24,6 +24,7 @@ type Settings struct {
 	Model               string                     `json:"model,omitempty"`
 	MaxOutputTokens     int                        `json:"maxOutputTokens,omitempty"`
 	ContextWindowTokens int                        `json:"contextWindowTokens,omitempty"`
+	WebSearchEndpoint   string                     `json:"webSearchEndpoint,omitempty"`
 	MCPServers          map[string]MCPServerConfig `json:"mcpServers,omitempty"`
 	Credentials         map[string]CredentialRef   `json:"credentials,omitempty"`
 }
@@ -49,6 +50,7 @@ type Runtime struct {
 	DisableResponseStorage bool
 	MaxOutputTokens        int
 	ContextWindowTokens    int
+	WebSearchEndpoint      string
 	MCPServers             map[string]MCPServerConfig
 	SourceSummary          string
 }
@@ -153,6 +155,11 @@ func LoadRuntimeWithStore(cwd string, store credentials.Store) (Runtime, error) 
 	if contextWindow < 0 || contextWindow > 10_000_000 {
 		return Runtime{}, errors.New("context window token count must be between 0 and 10000000")
 	}
+	if settings.WebSearchEndpoint != "" {
+		if err := ValidateWebSearchEndpoint(settings.WebSearchEndpoint); err != nil {
+			return Runtime{}, err
+		}
+	}
 
 	if model == "" {
 		return Runtime{}, errors.New("No model configured. Set " + filepath.Join("~", brand.ConfigDirName, "settings.json") + " or the matching provider model env var.")
@@ -181,6 +188,7 @@ func LoadRuntimeWithStore(cwd string, store credentials.Store) (Runtime, error) 
 		DisableResponseStorage: disableResponseStorage,
 		MaxOutputTokens:        maxTokens,
 		ContextWindowTokens:    contextWindow,
+		WebSearchEndpoint:      settings.WebSearchEndpoint,
 		MCPServers:             settings.MCPServers,
 		SourceSummary:          sourceSummary,
 	}, nil
@@ -259,6 +267,16 @@ func ValidateMCPServerConfig(server MCPServerConfig) error {
 	return nil
 }
 
+// ValidateWebSearchEndpoint accepts a user-owned SearXNG JSON search endpoint.
+// The tool supplies q and format=json; project configuration cannot set it.
+func ValidateWebSearchEndpoint(raw string) error {
+	_, u, err := egress.Origin(raw)
+	if err != nil || u.RawQuery != "" || u.RawPath != "" || !strings.HasSuffix(u.Path, "/search") || len(raw) > 2048 {
+		return fmt.Errorf("web search endpoint must be a query-free HTTPS /search URL")
+	}
+	return nil
+}
+
 func SaveMCPConfig(path string, servers map[string]MCPServerConfig) error {
 	for name, server := range servers {
 		if err := ValidateMCPServerConfig(server); err != nil {
@@ -272,6 +290,11 @@ func SaveMCPConfig(path string, servers map[string]MCPServerConfig) error {
 }
 
 func SaveSettings(updates Settings) error {
+	if updates.WebSearchEndpoint != "" {
+		if err := ValidateWebSearchEndpoint(updates.WebSearchEndpoint); err != nil {
+			return err
+		}
+	}
 	if containsSecrets(updates) {
 		return errors.New("raw secrets cannot be written to settings; run mycode auth login")
 	}
@@ -394,6 +417,9 @@ func mergeSettings(base, override Settings) Settings {
 	}
 	if override.ContextWindowTokens != 0 {
 		out.ContextWindowTokens = override.ContextWindowTokens
+	}
+	if override.WebSearchEndpoint != "" {
+		out.WebSearchEndpoint = override.WebSearchEndpoint
 	}
 	if out.Credentials == nil {
 		out.Credentials = map[string]CredentialRef{}
