@@ -293,6 +293,25 @@ Notebook 的源代码单元，并在核对 SHA-256 和人工审查差异后修�
 MyCode，并准备当前文件位置供用户检查后提交。详见
 [P2.3 RFC](docs/rfc/p2-3-vscode-integration.md)。
 
+用户配置可启用 Anthropic Messages 的提示缓存，并填写自己的模型价格以显示
+成本估算：
+
+```json
+{
+  "promptCaching": true,
+  "pricing": {
+    "inputPerMillion": 10,
+    "outputPerMillion": 20,
+    "cacheReadPerMillion": 1,
+    "cacheWritePerMillion": 12
+  }
+}
+```
+
+以上价格仅是格式示例，项目不内置价格表。普通会话显示每轮估算，TUI 显示
+本次运行累计估算。已有的 `maxOutputTokens` 和 `contextWindowTokens` 可控制
+输出及上下文增长。详见 [P2.4 RFC](docs/rfc/p2-4-cache-cost.md)。
+
 ## 整体架构
 
 可以把 Go 版看成几层协作的运行时：

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/BigSmartie/Coding-Agent/internal/cost"
 	"github.com/BigSmartie/Coding-Agent/internal/credentials"
 )
 
@@ -202,6 +203,22 @@ func TestWebSearchEndpointIsUserOnlyAndHTTPS(t *testing.T) {
 	}
 	if err := validateProjectSettings(Settings{WebSearchEndpoint: "https://search.example/search"}); err == nil {
 		t.Fatal("project search endpoint override accepted")
+	}
+}
+
+func TestCachingAndPricingAreUserOnly(t *testing.T) {
+	prices := &cost.Prices{InputPerMillion: 1, OutputPerMillion: 2, CacheReadPerMillion: 0.1, CacheWritePerMillion: 1.5}
+	if err := prices.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateProjectSettings(Settings{PromptCaching: true}); err == nil {
+		t.Fatal("project caching override accepted")
+	}
+	if err := validateProjectSettings(Settings{Pricing: prices}); err == nil {
+		t.Fatal("project pricing override accepted")
+	}
+	if err := (&cost.Prices{InputPerMillion: -1, OutputPerMillion: 2, CacheReadPerMillion: 1, CacheWritePerMillion: 1}).Validate(); err == nil {
+		t.Fatal("negative price accepted")
 	}
 }
 

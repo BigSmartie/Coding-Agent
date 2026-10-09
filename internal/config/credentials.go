@@ -76,8 +76,8 @@ func resolveCredential(provider, baseURL, authToken, apiKey string, env map[stri
 }
 
 func validateProjectSettings(settings Settings) error {
-	if settings.Provider != "" || len(settings.Env) != 0 || len(settings.Credentials) != 0 || settings.ContextWindowTokens != 0 || settings.WebSearchEndpoint != "" {
-		return errors.New("project settings may contain model, maxOutputTokens and MCP servers only; move provider, env, credentials, contextWindowTokens and webSearchEndpoint to user configuration")
+	if settings.Provider != "" || len(settings.Env) != 0 || len(settings.Credentials) != 0 || settings.ContextWindowTokens != 0 || settings.WebSearchEndpoint != "" || settings.PromptCaching || settings.Pricing != nil {
+		return errors.New("project settings may contain model, maxOutputTokens and MCP servers only; move provider, env, credentials, contextWindowTokens, webSearchEndpoint, promptCaching and pricing to user configuration")
 	}
 	return nil
 }

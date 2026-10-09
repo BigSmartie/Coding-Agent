@@ -179,6 +179,27 @@ The optional [VS Code extension](editors/vscode/README.md) opens MyCode in a
 trusted workspace terminal and prepares reviewed active-file context without
 submitting it. See the [P2.3 RFC](docs/rfc/p2-3-vscode-integration.md).
 
+For Anthropic Messages, user settings may opt into provider prompt caching and
+show a cost estimate using rates you supply for your model or gateway:
+
+```json
+{
+  "promptCaching": true,
+  "pricing": {
+    "inputPerMillion": 10,
+    "outputPerMillion": 20,
+    "cacheReadPerMillion": 1,
+    "cacheWritePerMillion": 12
+  }
+}
+```
+
+These numbers are examples, not current prices. MyCode does not ship a price
+table. Plain sessions show estimated cost per turn; the TUI shows an estimated
+total for the current run. Existing `maxOutputTokens` and
+`contextWindowTokens` settings can cap output and context growth. See the
+[P2.4 RFC](docs/rfc/p2-4-cache-cost.md).
+
 Review project instructions and each MCP configuration before enabling them:
 
 ```text

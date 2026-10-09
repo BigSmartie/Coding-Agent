@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/BigSmartie/Coding-Agent/internal/config"
+	"github.com/BigSmartie/Coding-Agent/internal/tools"
 )
 
 func TestCapabilitiesAreExplicitAboutUnknownContextAndWireFeatures(t *testing.T) {
@@ -19,6 +20,18 @@ func TestCapabilitiesAreExplicitAboutUnknownContextAndWireFeatures(t *testing.T)
 	anthropic := CapabilitiesFor(config.Runtime{Provider: "anthropic", Model: "configured-model"})
 	if anthropic.WireAPI != "anthropic_messages" || !anthropic.OpaqueReasoningState || anthropic.ReasoningControl != "" {
 		t.Fatalf("incorrect Anthropic capabilities: %#v", anthropic)
+	}
+}
+
+func TestAnthropicAutomaticCachingRequiresOptIn(t *testing.T) {
+	registry := tools.NewRegistry(nil, tools.Metadata{})
+	without := toAnthropicPayload(config.Runtime{Model: "test"}, registry, nil)
+	if _, ok := without["cache_control"]; ok {
+		t.Fatal("automatic caching enabled without user opt-in")
+	}
+	with := toAnthropicPayload(config.Runtime{Model: "test", PromptCaching: true}, registry, nil)
+	if control, ok := with["cache_control"].(map[string]any); !ok || control["type"] != "ephemeral" {
+		t.Fatalf("automatic caching was not requested: %#v", with)
 	}
 }
 

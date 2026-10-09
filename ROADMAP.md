@@ -86,7 +86,8 @@ attestation service.
   [RFC](docs/rfc/p2-2-web-tools.md)
 - P2.3 VS Code workspace and active-file integration: implemented; see
   [RFC](docs/rfc/p2-3-vscode-integration.md)
-- advanced prompt caching and cost optimization
+- P2.4 opt-in prompt caching and user-priced cost visibility: implemented; see
+  [RFC](docs/rfc/p2-4-cache-cost.md)
 - native sandbox backends where Docker is unavailable
 
 ## Contribution gate

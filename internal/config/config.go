@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/BigSmartie/Coding-Agent/internal/brand"
+	"github.com/BigSmartie/Coding-Agent/internal/cost"
 	"github.com/BigSmartie/Coding-Agent/internal/credentials"
 	"github.com/BigSmartie/Coding-Agent/internal/egress"
 	"github.com/BigSmartie/Coding-Agent/internal/safety"
@@ -25,6 +26,8 @@ type Settings struct {
 	MaxOutputTokens     int                        `json:"maxOutputTokens,omitempty"`
 	ContextWindowTokens int                        `json:"contextWindowTokens,omitempty"`
 	WebSearchEndpoint   string                     `json:"webSearchEndpoint,omitempty"`
+	PromptCaching       bool                       `json:"promptCaching,omitempty"`
+	Pricing             *cost.Prices               `json:"pricing,omitempty"`
 	MCPServers          map[string]MCPServerConfig `json:"mcpServers,omitempty"`
 	Credentials         map[string]CredentialRef   `json:"credentials,omitempty"`
 }
@@ -51,6 +54,8 @@ type Runtime struct {
 	MaxOutputTokens        int
 	ContextWindowTokens    int
 	WebSearchEndpoint      string
+	PromptCaching          bool
+	Pricing                *cost.Prices
 	MCPServers             map[string]MCPServerConfig
 	SourceSummary          string
 }
@@ -160,6 +165,11 @@ func LoadRuntimeWithStore(cwd string, store credentials.Store) (Runtime, error) 
 			return Runtime{}, err
 		}
 	}
+	if settings.Pricing != nil {
+		if err := settings.Pricing.Validate(); err != nil {
+			return Runtime{}, err
+		}
+	}
 
 	if model == "" {
 		return Runtime{}, errors.New("No model configured. Set " + filepath.Join("~", brand.ConfigDirName, "settings.json") + " or the matching provider model env var.")
@@ -189,6 +199,8 @@ func LoadRuntimeWithStore(cwd string, store credentials.Store) (Runtime, error) 
 		MaxOutputTokens:        maxTokens,
 		ContextWindowTokens:    contextWindow,
 		WebSearchEndpoint:      settings.WebSearchEndpoint,
+		PromptCaching:          settings.PromptCaching,
+		Pricing:                settings.Pricing,
 		MCPServers:             settings.MCPServers,
 		SourceSummary:          sourceSummary,
 	}, nil
@@ -290,6 +302,11 @@ func SaveMCPConfig(path string, servers map[string]MCPServerConfig) error {
 }
 
 func SaveSettings(updates Settings) error {
+	if updates.Pricing != nil {
+		if err := updates.Pricing.Validate(); err != nil {
+			return err
+		}
+	}
 	if updates.WebSearchEndpoint != "" {
 		if err := ValidateWebSearchEndpoint(updates.WebSearchEndpoint); err != nil {
 			return err
@@ -420,6 +437,13 @@ func mergeSettings(base, override Settings) Settings {
 	}
 	if override.WebSearchEndpoint != "" {
 		out.WebSearchEndpoint = override.WebSearchEndpoint
+	}
+	if override.PromptCaching {
+		out.PromptCaching = true
+	}
+	if override.Pricing != nil {
+		prices := *override.Pricing
+		out.Pricing = &prices
 	}
 	if out.Credentials == nil {
 		out.Credentials = map[string]CredentialRef{}

@@ -12,6 +12,7 @@ import (
 	"github.com/BigSmartie/Coding-Agent/internal/agent"
 	"github.com/BigSmartie/Coding-Agent/internal/brand"
 	"github.com/BigSmartie/Coding-Agent/internal/commands"
+	"github.com/BigSmartie/Coding-Agent/internal/cost"
 	"github.com/BigSmartie/Coding-Agent/internal/message"
 	"github.com/BigSmartie/Coding-Agent/internal/permissions"
 	"github.com/BigSmartie/Coding-Agent/internal/safety"
@@ -43,6 +44,9 @@ type tuiState struct {
 	historyDraft    string
 	pendingApproval *approvalState
 	tokens          message.TokenUsage
+	estimatedCost   float64
+	hasCost         bool
+	costUnknown     bool
 	busy            bool
 	spinnerFrame    int
 	streaming       *streamingReply
@@ -403,7 +407,7 @@ func (s *Session) renderTUIScreen(state tuiState, width, height int) string {
 			brand.AppName,
 			"v"+brand.Version,
 			s.args.CWD,
-			s.currentModelName()+" | "+state.status,
+			s.modelStatusWithCost(state),
 			s.homeSections(),
 			s.homeBanner(),
 			state.input,
@@ -418,7 +422,7 @@ func (s *Session) renderTUIScreen(state tuiState, width, height int) string {
 	return tui.RenderChatScreen(
 		brand.AppName,
 		s.args.CWD,
-		s.currentModelName()+" | "+state.status,
+		s.modelStatusWithCost(state),
 		feed,
 		state.input,
 		state.cursor,
@@ -429,6 +433,17 @@ func (s *Session) renderTUIScreen(state tuiState, width, height int) string {
 		height,
 		len(entries),
 	)
+}
+
+func (s *Session) modelStatusWithCost(state tuiState) string {
+	status := s.currentModelName() + " | " + state.status
+	if state.costUnknown {
+		return status + " | cost unavailable"
+	}
+	if state.hasCost {
+		return status + fmt.Sprintf(" | est $%.6f this run", state.estimatedCost)
+	}
+	return status
 }
 
 func (s *Session) renderHeaderBody(eventCount int) string {
@@ -721,6 +736,15 @@ func (s *Session) applyTUIAgentEvent(state *tuiState, event tuiAgentEvent) {
 		finishAssistantEntry(state, "assistant", event.content)
 	case "usage":
 		state.tokens = event.usage
+		if s.args.Runtime != nil && s.args.Runtime.Pricing != nil {
+			amount, err := cost.Estimate(event.usage, *s.args.Runtime.Pricing)
+			if err != nil {
+				state.costUnknown = true
+			} else {
+				state.estimatedCost += amount
+				state.hasCost = true
+			}
+		}
 	case "approval_start":
 		event.request.Summary = safety.Redact(s.args.Store.Context, event.request.Summary)
 		for i := range event.request.Details {
