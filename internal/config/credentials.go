@@ -76,8 +76,8 @@ func resolveCredential(provider, baseURL, authToken, apiKey string, env map[stri
 }
 
 func validateProjectSettings(settings Settings) error {
-	if settings.Provider != "" || len(settings.Env) != 0 || len(settings.Credentials) != 0 {
-		return errors.New("project settings may contain model, maxOutputTokens and MCP servers only; move provider, env and credential settings to user configuration (mycode auth login)")
+	if settings.Provider != "" || len(settings.Env) != 0 || len(settings.Credentials) != 0 || settings.ContextWindowTokens != 0 {
+		return errors.New("project settings may contain model, maxOutputTokens and MCP servers only; move provider, env, credentials and contextWindowTokens to user configuration")
 	}
 	return nil
 }

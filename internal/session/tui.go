@@ -315,6 +315,10 @@ func (s *Session) handleTUIEvent(ctx context.Context, state *tuiState, event tui
 }
 
 func (s *Session) runAgentForTUI(ctx context.Context, input string, send func(tuiAgentEvent)) error {
+	turnID, err := s.beginTurn()
+	if err != nil {
+		return err
+	}
 	messages := append(s.args.Messages, message.UserMessage(input))
 	next, err := agent.RunTurn(ctx, agent.Args{
 		Model:        s.args.Model,
@@ -322,6 +326,7 @@ func (s *Session) runAgentForTUI(ctx context.Context, input string, send func(tu
 		Messages:     messages,
 		CWD:          s.args.CWD,
 		Permission:   s.args.Permission,
+		OnEvent:      func(event agent.Event) error { return s.journalEvent(turnID, event) },
 		OnModelStart: func() { send(tuiAgentEvent{kind: "model_start"}) },
 		OnTextDelta:  func(content string) { send(tuiAgentEvent{kind: "text_delta", content: safety.Redact(ctx, content)}) },
 		OnProgressMessage: func(content string) {
@@ -340,6 +345,9 @@ func (s *Session) runAgentForTUI(ctx context.Context, input string, send func(tu
 			send(tuiAgentEvent{kind: "usage", usage: usage})
 		},
 	})
+	if persistErr := s.finishTurn(turnID, next, err); persistErr != nil {
+		return persistErr
+	}
 	send(tuiAgentEvent{kind: "done", next: next, err: err})
 	return nil
 }
@@ -590,6 +598,11 @@ func (s *Session) runApprovalPrompt(ctx context.Context, state *tuiState, reques
 }
 
 func (s *Session) queueApprovalPrompt(ctx context.Context, request permissions.Request, events chan<- tuiAgentEvent) (permissions.PromptResult, error) {
+	if s.args.Journal != nil {
+		if _, err := s.args.Journal.Append(Event{Kind: EventApprovalRequested}); err != nil {
+			return permissions.PromptResult{}, err
+		}
+	}
 	resultCh := make(chan permissions.PromptResult, 1)
 	select {
 	case events <- tuiAgentEvent{kind: "approval_start", request: request, resultCh: resultCh}:
@@ -601,6 +614,11 @@ func (s *Session) queueApprovalPrompt(ctx context.Context, request permissions.R
 	case result, ok := <-resultCh:
 		if !ok {
 			return permissions.PromptResult{Decision: permissions.DecisionDenyOnce}, nil
+		}
+		if s.args.Journal != nil {
+			if _, err := s.args.Journal.Append(Event{Kind: EventApprovalDecided, Decision: string(result.Decision)}); err != nil {
+				return permissions.PromptResult{}, err
+			}
 		}
 		select {
 		case events <- tuiAgentEvent{kind: "approval_done"}:
@@ -644,6 +662,10 @@ func (s *Session) runShortcutForTUI(ctx context.Context, input string, send func
 	if !ok {
 		return fmt.Errorf("invalid tool shortcut")
 	}
+	turnID, err := s.beginTurn()
+	if err != nil {
+		return err
+	}
 	if lifecycle, ok := s.args.Permission.(interface {
 		BeginTurn()
 		EndTurn()
@@ -651,10 +673,19 @@ func (s *Session) runShortcutForTUI(ctx context.Context, input string, send func
 		lifecycle.BeginTurn()
 		defer lifecycle.EndTurn()
 	}
+	if err := s.journalEvent(turnID, agent.Event{Kind: string(EventToolStarted), ToolName: call.ToolName}); err != nil {
+		return err
+	}
 	send(tuiAgentEvent{kind: "tool_start", toolName: call.ToolName, toolInput: call.Input})
 	result := s.args.Tools.Execute(ctx, call.ToolName, call.Input, tools.Context{CWD: s.args.CWD, Permission: s.args.Permission})
+	if err := s.journalEvent(turnID, agent.Event{Kind: string(EventToolCompleted), ToolName: call.ToolName}); err != nil {
+		return err
+	}
 	send(tuiAgentEvent{kind: "tool_result", toolName: call.ToolName, content: result.Output, isError: !result.OK})
 	next := append(append([]message.Message(nil), s.args.Messages...), message.UserMessage(input), message.AssistantMessage(result.Output))
+	if err := s.finishTurn(turnID, next, ctx.Err()); err != nil {
+		return err
+	}
 	send(tuiAgentEvent{kind: "done", next: next, err: ctx.Err()})
 	return nil
 }
@@ -706,10 +737,12 @@ func (s *Session) applyTUIAgentEvent(state *tuiState, event tuiAgentEvent) {
 		if event.err != nil {
 			appendAssistantEntry(state, safety.Redact(s.args.Store.Context, event.err.Error()))
 		}
-		if err := s.persistMessages(); err != nil {
-			appendAssistantEntry(state, err.Error())
-			state.status = "Persist failed"
-			return
+		if s.args.Journal == nil {
+			if err := s.persistMessages(); err != nil {
+				appendAssistantEntry(state, err.Error())
+				state.status = "Persist failed"
+				return
+			}
 		}
 		if event.err != nil {
 			state.status = "Request stopped"

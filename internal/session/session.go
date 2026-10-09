@@ -3,6 +3,7 @@ package session
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/BigSmartie/Coding-Agent/internal/commands"
 	"github.com/BigSmartie/Coding-Agent/internal/config"
 	"github.com/BigSmartie/Coding-Agent/internal/message"
+	"github.com/BigSmartie/Coding-Agent/internal/model"
 	"github.com/BigSmartie/Coding-Agent/internal/safety"
 	"github.com/BigSmartie/Coding-Agent/internal/tools"
 )
@@ -27,6 +29,7 @@ type Args struct {
 	History    History
 	Store      Store
 	SessionID  string
+	Journal    *Journal
 	In         io.Reader
 	Out        io.Writer
 }
@@ -137,6 +140,13 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 		fmt.Fprintln(s.args.Out, "provider: "+s.args.Runtime.Provider)
 		fmt.Fprintln(s.args.Out, "model: "+s.args.Runtime.Model)
 		fmt.Fprintln(s.args.Out, "baseUrl: "+s.args.Runtime.BaseURL)
+		capabilities := model.CapabilitiesFor(*s.args.Runtime)
+		if capabilities.ContextWindowTokens > 0 {
+			fmt.Fprintf(s.args.Out, "context window: %d tokens (%s)\n", capabilities.ContextWindowTokens, capabilities.ContextWindowSource)
+		} else {
+			fmt.Fprintln(s.args.Out, "context window: unknown; set contextWindowTokens in user settings")
+		}
+		fmt.Fprintln(s.args.Out, "wire API: "+capabilities.WireAPI)
 		auth := "API_KEY"
 		if s.args.Runtime.AuthToken != "" {
 			auth = "AUTH_TOKEN"
@@ -202,6 +212,10 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 		return nil
 	}
 	if call, ok := commands.ParseShortcut(input); ok {
+		turnID, err := s.beginTurn()
+		if err != nil {
+			return err
+		}
 		if lifecycle, ok := s.args.Permission.(interface {
 			BeginTurn()
 			EndTurn()
@@ -209,7 +223,20 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 			lifecycle.BeginTurn()
 			defer lifecycle.EndTurn()
 		}
+		if err := s.journalEvent(turnID, agent.Event{Kind: string(EventToolStarted), ToolName: call.ToolName}); err != nil {
+			return err
+		}
 		result := s.args.Tools.Execute(ctx, call.ToolName, call.Input, tools.Context{CWD: s.args.CWD, Permission: s.args.Permission})
+		if err := s.journalEvent(turnID, agent.Event{Kind: string(EventToolCompleted), ToolName: call.ToolName}); err != nil {
+			return err
+		}
+		if s.args.Journal != nil {
+			next := append(append([]message.Message(nil), s.args.Messages...), message.UserMessage(input), message.AssistantMessage(result.Output))
+			if err := s.finishTurn(turnID, next, nil); err != nil {
+				return err
+			}
+			s.args.Messages = next
+		}
 		if result.OK {
 			fmt.Fprintln(s.args.Out, result.Output)
 		} else {
@@ -228,6 +255,10 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 		return nil
 	}
 
+	turnID, err := s.beginTurn()
+	if err != nil {
+		return err
+	}
 	messages := append(s.args.Messages, message.UserMessage(input))
 	next, err := agent.RunTurn(ctx, agent.Args{
 		Model:      s.args.Model,
@@ -235,6 +266,7 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 		Messages:   messages,
 		CWD:        s.args.CWD,
 		Permission: s.args.Permission,
+		OnEvent:    func(event agent.Event) error { return s.journalEvent(turnID, event) },
 		OnProgressMessage: func(content string) {
 			fmt.Fprintln(s.args.Out, "progress: "+content)
 		},
@@ -245,14 +277,14 @@ func (s *Session) RunOnce(ctx context.Context, input string) error {
 	if err != nil {
 		content := "request failed: " + err.Error()
 		s.args.Messages = append(next, message.AssistantMessage(content))
-		if persistErr := s.persistMessages(); persistErr != nil {
+		if persistErr := s.finishTurn(turnID, s.args.Messages, err); persistErr != nil {
 			return persistErr
 		}
 		fmt.Fprintln(s.args.Out, content)
 		return nil
 	}
 	s.args.Messages = next
-	if err := s.persistMessages(); err != nil {
+	if err := s.finishTurn(turnID, next, nil); err != nil {
 		return err
 	}
 	for i := len(next) - 1; i >= 0; i-- {
@@ -286,4 +318,45 @@ func (s *Session) persistMessages() error {
 		CWD:      s.args.CWD,
 		Messages: s.args.Messages,
 	})
+}
+
+func (s *Session) beginTurn() (string, error) {
+	if s.args.Journal == nil {
+		return "", nil
+	}
+	id := rand.Text()
+	_, err := s.args.Journal.Append(Event{Kind: EventTurnStarted, TurnID: id})
+	return id, err
+}
+
+func (s *Session) journalEvent(turnID string, event agent.Event) error {
+	if s.args.Journal == nil {
+		return nil
+	}
+	_, err := s.args.Journal.Append(Event{Kind: EventKind(event.Kind), TurnID: turnID, CallID: event.CallID, ToolName: event.ToolName})
+	return err
+}
+
+func (s *Session) finishTurn(turnID string, messages []message.Message, turnErr error) error {
+	if s.args.Store.Dir == "" || s.args.SessionID == "" {
+		return nil
+	}
+	if s.args.Journal == nil {
+		return s.args.Store.Save(Record{ID: s.args.SessionID, CWD: s.args.CWD, Messages: messages})
+	}
+	kind := EventTurnCompleted
+	if turnErr != nil {
+		kind = EventTurnFailed
+	}
+	if _, err := s.args.Journal.Append(Event{Kind: kind, TurnID: turnID}); err != nil {
+		return err
+	}
+	record, err := s.args.Journal.AppendCheckpoint(Record{ID: s.args.SessionID, CWD: s.args.CWD, Messages: messages}, turnID)
+	if err != nil {
+		return err
+	}
+	if err := s.args.Store.Save(record); err != nil {
+		return err
+	}
+	return s.args.Journal.CompactIfNeeded()
 }

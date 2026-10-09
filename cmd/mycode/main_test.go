@@ -26,6 +26,13 @@ func TestParseStartupArgsResume(t *testing.T) {
 	if parsed.ResumeID != "latest" || len(parsed.ManagementArgs) != 0 {
 		t.Fatalf("unexpected parsed args: %#v", parsed)
 	}
+	parsed, err = parseStartupArgs([]string{"--recover-interrupted", "--resume", "session-1"})
+	if err != nil || !parsed.RecoverInterrupted || parsed.ResumeID != "session-1" {
+		t.Fatalf("unexpected recovery args: %#v, %v", parsed, err)
+	}
+	if _, err := parseStartupArgs([]string{"--recover-interrupted"}); err == nil {
+		t.Fatal("recovery flag without session was accepted")
+	}
 
 	parsed, err = parseStartupArgs([]string{"sessions", "list"})
 	if err != nil {

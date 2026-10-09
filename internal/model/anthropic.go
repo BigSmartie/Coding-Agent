@@ -91,11 +91,7 @@ func (a *Anthropic) NextStream(ctx context.Context, messages []message.Message, 
 
 	content, kind := ParseAssistantText(strings.TrimSpace(strings.Join(textParts, "\n")))
 	diagnostics := message.Diagnostics{StopReason: data.StopReason, BlockTypes: blockTypes, IgnoredBlockTypes: ignored}
-	diagnostics.Usage = message.TokenUsage{
-		InputTokens:  data.Usage.InputTokens,
-		OutputTokens: data.Usage.OutputTokens,
-		TotalTokens:  data.Usage.InputTokens + data.Usage.OutputTokens,
-	}
+	diagnostics.Usage = anthropicUsageToDiagnostics(data)
 	if data.StopReason == "max_tokens" && (len(calls) > 0 || content != "") {
 		return message.Step{}, &RequestError{Reason: "incomplete model output (max_tokens)"}
 	}
@@ -120,6 +116,16 @@ func (a *Anthropic) NextStream(ctx context.Context, messages []message.Message, 
 	return step, nil
 }
 
+func anthropicUsageToDiagnostics(data anthropicResponse) message.TokenUsage {
+	return message.TokenUsage{
+		InputTokens:      data.Usage.InputTokens + data.Usage.CacheCreationInputTokens + data.Usage.CacheReadInputTokens,
+		OutputTokens:     data.Usage.OutputTokens,
+		TotalTokens:      data.Usage.InputTokens + data.Usage.OutputTokens + data.Usage.CacheCreationInputTokens + data.Usage.CacheReadInputTokens,
+		CacheReadTokens:  data.Usage.CacheReadInputTokens,
+		CacheWriteTokens: data.Usage.CacheCreationInputTokens,
+	}
+}
+
 type anthropicResponse struct {
 	Error *struct {
 		Message string `json:"message"`
@@ -127,8 +133,10 @@ type anthropicResponse struct {
 	StopReason string         `json:"stop_reason"`
 	Content    []contentBlock `json:"content"`
 	Usage      struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
+		InputTokens              int `json:"input_tokens"`
+		OutputTokens             int `json:"output_tokens"`
+		CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+		CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 	} `json:"usage"`
 }
 

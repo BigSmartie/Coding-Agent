@@ -84,9 +84,11 @@ type Diagnostics struct {
 }
 
 type TokenUsage struct {
-	InputTokens  int
-	OutputTokens int
-	TotalTokens  int
+	InputTokens      int
+	OutputTokens     int
+	TotalTokens      int
+	CacheReadTokens  int
+	CacheWriteTokens int
 }
 
 type StepType string

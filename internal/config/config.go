@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -17,12 +18,13 @@ import (
 )
 
 type Settings struct {
-	Env             map[string]any             `json:"env,omitempty"`
-	Provider        string                     `json:"provider,omitempty"`
-	Model           string                     `json:"model,omitempty"`
-	MaxOutputTokens int                        `json:"maxOutputTokens,omitempty"`
-	MCPServers      map[string]MCPServerConfig `json:"mcpServers,omitempty"`
-	Credentials     map[string]CredentialRef   `json:"credentials,omitempty"`
+	Env                 map[string]any             `json:"env,omitempty"`
+	Provider            string                     `json:"provider,omitempty"`
+	Model               string                     `json:"model,omitempty"`
+	MaxOutputTokens     int                        `json:"maxOutputTokens,omitempty"`
+	ContextWindowTokens int                        `json:"contextWindowTokens,omitempty"`
+	MCPServers          map[string]MCPServerConfig `json:"mcpServers,omitempty"`
+	Credentials         map[string]CredentialRef   `json:"credentials,omitempty"`
 }
 
 type MCPServerConfig struct {
@@ -44,6 +46,7 @@ type Runtime struct {
 	ReasoningEffort        string
 	DisableResponseStorage bool
 	MaxOutputTokens        int
+	ContextWindowTokens    int
 	MCPServers             map[string]MCPServerConfig
 	SourceSummary          string
 }
@@ -138,6 +141,16 @@ func LoadRuntimeWithStore(cwd string, store credentials.Store) (Runtime, error) 
 			maxTokens = parsed
 		}
 	}
+	contextWindow := settings.ContextWindowTokens
+	if raw := firstNonEmpty(os.Getenv(brand.EnvName("CONTEXT_WINDOW_TOKENS")), env[brand.EnvName("CONTEXT_WINDOW_TOKENS")]); raw != "" {
+		contextWindow, err = strconv.Atoi(raw)
+		if err != nil {
+			return Runtime{}, fmt.Errorf("invalid context window token count: %w", err)
+		}
+	}
+	if contextWindow < 0 || contextWindow > 10_000_000 {
+		return Runtime{}, errors.New("context window token count must be between 0 and 10000000")
+	}
 
 	if model == "" {
 		return Runtime{}, errors.New("No model configured. Set " + filepath.Join("~", brand.ConfigDirName, "settings.json") + " or the matching provider model env var.")
@@ -165,6 +178,7 @@ func LoadRuntimeWithStore(cwd string, store credentials.Store) (Runtime, error) 
 		ReasoningEffort:        reasoningEffort,
 		DisableResponseStorage: disableResponseStorage,
 		MaxOutputTokens:        maxTokens,
+		ContextWindowTokens:    contextWindow,
 		MCPServers:             settings.MCPServers,
 		SourceSummary:          sourceSummary,
 	}, nil
@@ -348,6 +362,9 @@ func mergeSettings(base, override Settings) Settings {
 	}
 	if override.MaxOutputTokens != 0 {
 		out.MaxOutputTokens = override.MaxOutputTokens
+	}
+	if override.ContextWindowTokens != 0 {
+		out.ContextWindowTokens = override.ContextWindowTokens
 	}
 	if out.Credentials == nil {
 		out.Credentials = map[string]CredentialRef{}

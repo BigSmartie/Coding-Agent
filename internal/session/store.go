@@ -22,14 +22,17 @@ type Store struct {
 	Context context.Context
 }
 
+const interruptedTurnError = "The previous turn stopped before its checkpoint. Tool effects may already exist; automatic replay is disabled. Start a new session after reviewing the workspace."
+
 type Record struct {
-	SchemaVersion int               `json:"schemaVersion,omitempty"`
-	ResumeError   string            `json:"resumeError,omitempty"`
-	ID            string            `json:"id"`
-	CWD           string            `json:"cwd,omitempty"`
-	CreatedAt     time.Time         `json:"createdAt"`
-	UpdatedAt     time.Time         `json:"updatedAt"`
-	Messages      []message.Message `json:"messages"`
+	SchemaVersion   int               `json:"schemaVersion,omitempty"`
+	JournalSequence uint64            `json:"journalSequence,omitempty"`
+	ResumeError     string            `json:"resumeError,omitempty"`
+	ID              string            `json:"id"`
+	CWD             string            `json:"cwd,omitempty"`
+	CreatedAt       time.Time         `json:"createdAt"`
+	UpdatedAt       time.Time         `json:"updatedAt"`
+	Messages        []message.Message `json:"messages"`
 }
 
 type Summary struct {
@@ -43,7 +46,7 @@ func NewRecord(cwd string, messages []message.Message) Record {
 	now := time.Now().UTC()
 	return Record{
 		ID:            now.Format("20060102-150405") + "-" + strings.ToLower(rand.Text()),
-		SchemaVersion: 1,
+		SchemaVersion: 2,
 		CWD:           cwd,
 		CreatedAt:     now,
 		UpdatedAt:     now,
@@ -69,27 +72,13 @@ func (s Store) Save(record Record) error {
 			record.CreatedAt = now
 		}
 	}
-	record.SchemaVersion = 1
+	record.SchemaVersion = 2
 	record.UpdatedAt = now
-	bytes, err := json.MarshalIndent(record, "", "  ")
+	sanitized, err := sanitizeRecord(s.Context, record)
 	if err != nil {
 		return err
 	}
-	bytes, err = safety.RedactJSON(s.Context, bytes)
-	if err != nil {
-		return err
-	}
-	// Signed/encrypted continuation fields are protocol bytes, not display text.
-	// Keep those fields intact. If signed plaintext required redaction, retain
-	// the redacted history but explicitly disable replay of the invalid signature.
-	var sanitized Record
-	if err := json.Unmarshal(bytes, &sanitized); err != nil {
-		return err
-	}
-	if err := preserveOpaqueState(s.Context, record, &sanitized); err != nil {
-		return err
-	}
-	bytes, err = json.MarshalIndent(sanitized, "", "  ")
+	bytes, err := json.MarshalIndent(sanitized, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -97,6 +86,28 @@ func (s Store) Save(record Record) error {
 		return fmt.Errorf("session exceeds 16 MiB persistence limit")
 	}
 	return safety.PrivateWrite(path, append(bytes, '\n'))
+}
+
+func sanitizeRecord(ctx context.Context, record Record) (Record, error) {
+	bytes, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		return Record{}, err
+	}
+	bytes, err = safety.RedactJSON(ctx, bytes)
+	if err != nil {
+		return Record{}, err
+	}
+	// Signed/encrypted continuation fields are protocol bytes, not display text.
+	// Keep those fields intact. If signed plaintext required redaction, retain
+	// the redacted history but explicitly disable replay of the invalid signature.
+	var sanitized Record
+	if err := json.Unmarshal(bytes, &sanitized); err != nil {
+		return Record{}, err
+	}
+	if err := preserveOpaqueState(ctx, record, &sanitized); err != nil {
+		return Record{}, err
+	}
+	return sanitized, nil
 }
 
 func preserveOpaqueState(ctx context.Context, original Record, sanitized *Record) error {
@@ -174,8 +185,46 @@ func (s Store) Load(id string) (Record, error) {
 	if record.ID != id {
 		return Record{}, fmt.Errorf("session ID does not match its filename")
 	}
-	if record.SchemaVersion > 1 {
+	if record.SchemaVersion > 2 {
 		return Record{}, fmt.Errorf("session was written by a newer schema version")
+	}
+	events, err := s.readJournal(id)
+	if err != nil {
+		return Record{}, err
+	}
+	if record.JournalSequence > 0 && len(events) == 0 {
+		return Record{}, fmt.Errorf("session journal is missing")
+	}
+	if len(events) > 0 && record.JournalSequence > events[len(events)-1].Sequence {
+		return Record{}, fmt.Errorf("session checkpoint is ahead of its journal")
+	}
+	if record.JournalSequence > 0 && len(events) > 0 && record.JournalSequence >= events[0].Sequence {
+		found := false
+		for _, event := range events {
+			if event.Sequence == record.JournalSequence {
+				found = event.Kind == EventCheckpoint
+				break
+			}
+		}
+		if !found {
+			return Record{}, fmt.Errorf("session checkpoint sequence does not reference a checkpoint")
+		}
+	}
+	for _, event := range events {
+		if event.Kind != EventCheckpoint || event.Sequence <= record.JournalSequence {
+			continue
+		}
+		checkpoint := *event.Checkpoint
+		if checkpoint.CreatedAt.IsZero() {
+			checkpoint.CreatedAt = record.CreatedAt
+		}
+		if checkpoint.CWD == "" {
+			checkpoint.CWD = record.CWD
+		}
+		record = checkpoint
+	}
+	if len(events) > 0 && events[len(events)-1].Sequence > record.JournalSequence && record.ResumeError == "" {
+		record.ResumeError = interruptedTurnError
 	}
 	return record, nil
 }

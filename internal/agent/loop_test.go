@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -58,6 +59,30 @@ func TestRunTurnExecutesToolThenReturnsFinalAnswer(t *testing.T) {
 	}
 	if out[3].Content != "hi" || out[3].IsError {
 		t.Fatalf("unexpected tool result: %#v", out[3])
+	}
+}
+
+func TestRunTurnDoesNotExecuteToolWhenIntentCannotBeJournaled(t *testing.T) {
+	model := &scriptedModel{steps: []message.Step{
+		message.ToolCallsStep([]message.ToolCall{{ID: "call-1", ToolName: "side_effect", Input: map[string]any{}}}, "", message.ContentNone, message.Diagnostics{}),
+	}}
+	executions := 0
+	registry := tools.NewRegistry([]tools.Definition{{Name: "side_effect", Run: func(context.Context, json.RawMessage, tools.Context) tools.Result {
+		executions++
+		return tools.Success("done")
+	}}}, tools.Metadata{})
+	want := errors.New("journal unavailable")
+	_, err := RunTurn(context.Background(), Args{
+		Model: model, Tools: registry,
+		OnEvent: func(event Event) error {
+			if event.Kind == "tool_started" {
+				return want
+			}
+			return nil
+		},
+	})
+	if !errors.Is(err, want) || executions != 0 {
+		t.Fatalf("tool ran without durable intent: executions=%d, error=%v", executions, err)
 	}
 }
 

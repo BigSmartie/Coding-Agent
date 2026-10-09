@@ -23,6 +23,15 @@ type Args struct {
 	OnUsage           func(message.TokenUsage)
 	OnTextDelta       func(string)
 	OnModelStart      func()
+	// OnEvent is synchronous. A failed pre-execution event prevents the model or
+	// tool call, so the session cannot perform an unjournaled side effect.
+	OnEvent func(Event) error
+}
+
+type Event struct {
+	Kind     string
+	CallID   string
+	ToolName string
 }
 
 func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
@@ -52,6 +61,9 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 		if err := ctx.Err(); err != nil {
 			return messages, err
 		}
+		if err := callEvent(args.OnEvent, Event{Kind: "model_started"}); err != nil {
+			return messages, err
+		}
 		if args.OnModelStart != nil {
 			args.OnModelStart()
 		}
@@ -63,6 +75,12 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 			next, err = args.Model.Next(ctx, messages)
 		}
 		if err != nil {
+			if eventErr := callEvent(args.OnEvent, Event{Kind: "model_failed"}); eventErr != nil {
+				return messages, eventErr
+			}
+			return messages, err
+		}
+		if err := callEvent(args.OnEvent, Event{Kind: "model_completed"}); err != nil {
 			return messages, err
 		}
 		callUsage(args.OnUsage, next.Diagnostics.Usage)
@@ -168,6 +186,9 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 					messages = append(messages, message.ToolResultMessage(call.ID, call.ToolName, "Tool execution canceled.", true))
 					continue
 				}
+				if err := callEvent(args.OnEvent, Event{Kind: "tool_started", CallID: call.ID, ToolName: call.ToolName}); err != nil {
+					return messages, err
+				}
 				callToolStart(args.OnToolStart, call.ToolName, call.Input)
 				result := args.Tools.Execute(ctx, call.ToolName, call.Input, tools.Context{
 					CWD:        args.CWD,
@@ -181,6 +202,9 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 				messages = append(messages,
 					message.ToolResultMessage(call.ID, call.ToolName, result.Output, !result.OK),
 				)
+				if err := callEvent(args.OnEvent, Event{Kind: "tool_completed", CallID: call.ID, ToolName: call.ToolName}); err != nil {
+					return messages, err
+				}
 			}
 			if err := ctx.Err(); err != nil {
 				return messages, err
@@ -191,6 +215,13 @@ func RunTurn(ctx context.Context, args Args) ([]message.Message, error) {
 	content := "Reached the maximum tool-step limit; this turn has stopped."
 	callAssistant(args.OnAssistant, content)
 	return append(messages, message.AssistantMessage(content)), nil
+}
+
+func callEvent(fn func(Event) error, event Event) error {
+	if fn == nil {
+		return nil
+	}
+	return fn(event)
 }
 
 func shouldTreatAssistantAsProgress(kind message.ContentKind, content string, sawToolResult bool) bool {

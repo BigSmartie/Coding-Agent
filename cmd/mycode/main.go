@@ -111,9 +111,29 @@ func run(ctx context.Context, argv []string) error {
 
 	store := session.Store{Dir: config.SessionsDir(), Context: ctx}
 	sessionID := startup.ResumeID
+	resuming := sessionID != ""
 	messages := []message.Message{message.SystemMessage(systemPrompt)}
-	if sessionID != "" {
-		record, err := loadSessionRecord(store, sessionID)
+	if sessionID == "latest" {
+		record, err := store.Latest()
+		if err != nil {
+			return err
+		}
+		sessionID = record.ID
+	}
+	if !resuming {
+		record := session.NewRecord(cwd, messages)
+		sessionID = record.ID
+		if err := store.Save(record); err != nil {
+			return err
+		}
+	}
+	journal, err := store.OpenJournal(sessionID)
+	if err != nil {
+		return err
+	}
+	defer journal.Close()
+	if resuming {
+		record, err := store.Load(sessionID)
 		if err != nil {
 			return err
 		}
@@ -123,14 +143,15 @@ func run(ctx context.Context, argv []string) error {
 		if err != nil || currentErr != nil || savedCWD != currentCWD {
 			return fmt.Errorf("saved session belongs to another workspace; resume it from its original directory")
 		}
+		record, err = journal.RecoverInterrupted(startup.RecoverInterrupted)
+		if err != nil {
+			return err
+		}
 		for _, msg := range record.Messages {
 			if msg.Role != message.RoleSystem {
 				messages = append(messages, msg)
 			}
 		}
-	} else {
-		record := session.NewRecord(cwd, messages)
-		sessionID = record.ID
 	}
 
 	app := session.New(session.Args{
@@ -143,6 +164,7 @@ func run(ctx context.Context, argv []string) error {
 		History:    session.History{Path: config.HistoryPath()},
 		Store:      store,
 		SessionID:  sessionID,
+		Journal:    journal,
 	})
 	if startup.ForceTUI || (terminal.IsTerminal(os.Stdin) && terminal.IsTerminal(os.Stdout)) {
 		return app.RunTUI(ctx)
@@ -160,9 +182,10 @@ func run(ctx context.Context, argv []string) error {
 }
 
 type startupArgs struct {
-	ResumeID       string
-	ForceTUI       bool
-	ManagementArgs []string
+	ResumeID           string
+	RecoverInterrupted bool
+	ForceTUI           bool
+	ManagementArgs     []string
 }
 
 func parseStartupArgs(argv []string) (startupArgs, error) {
@@ -177,28 +200,16 @@ func parseStartupArgs(argv []string) (startupArgs, error) {
 			i++
 		case "--tui":
 			out.ForceTUI = true
+		case "--recover-interrupted":
+			out.RecoverInterrupted = true
 		default:
 			out.ManagementArgs = append(out.ManagementArgs, argv[i])
 		}
 	}
+	if out.RecoverInterrupted && out.ResumeID == "" {
+		return startupArgs{}, fmt.Errorf("--recover-interrupted requires --resume <id|latest>")
+	}
 	return out, nil
-}
-
-func loadSessionRecord(store session.Store, id string) (session.Record, error) {
-	var record session.Record
-	var err error
-	if id == "latest" {
-		record, err = store.Latest()
-	} else {
-		record, err = store.Load(id)
-	}
-	if err != nil {
-		return session.Record{}, err
-	}
-	if record.ResumeError != "" {
-		return session.Record{}, fmt.Errorf("saved session cannot resume: %s", record.ResumeError)
-	}
-	return record, nil
 }
 
 func usage() string {

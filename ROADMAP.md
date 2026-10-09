@@ -24,6 +24,12 @@ fixtures, race/fault/adversarial tests, platform integration, and updated docs.
 
 ### P1.1 Event journal, checkpoints, and model capabilities
 
+The local-session runtime is implemented (see
+[RFC](docs/rfc/p1-1-session-journal.md)): durable execution events, atomic
+replayable checkpoints, safe interrupted-turn recovery, schema migration,
+cross-process locks, bounded journal compaction, and explicit adapter/model
+capability metadata. Job lifecycle events join the same journal in P1.3.
+
 - append-only typed events for turns, approvals, model calls, tool calls, and jobs
 - atomic checkpoints and crash replay without duplicate tool execution
 - session schema migration and cross-process locking
