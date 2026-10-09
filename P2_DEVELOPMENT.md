@@ -29,19 +29,25 @@ Each milestone's contract and failure behavior are in its linked
   passed against an actual WSL2 distribution. It checked non-root execution,
   filtered snapshot contents, inaccessible Windows drive mounts, denied network,
   temporary edits, retained artifact export, and cancellation.
-- The local full `go test -race -count=1 -timeout=5m ./...`, `go vet ./...`,
-  `go mod verify`, VS Code `node --test`, and a 15-second egress fuzz run passed
-  after the final code change. An earlier CI fuzz run exposed a leading-zero
+- The P2 follow-up `TestIntegrationWSLGuestPTY` passed on the same host. It
+  checked a real guest terminal, interactive input/output, and cancellation
+  after the job started.
+- At the original P2 closeout, the full `go test -race -count=1 -timeout=5m
+  ./...`, `go vet ./...`, `go mod verify`, VS Code `node --test`, and a
+  15-second egress fuzz run passed. An earlier CI fuzz run exposed a leading-zero
   default-port bug; PR #13 includes its fix and a deterministic regression
   test. The follow-up local fuzz run exercised the URL policy about 1.46
   million times without a failure.
+- After the guest PTY follow-up, the full Go race suite, `go vet`, module
+  verification, VS Code tests, and both opt-in Windows WSL2 tests passed again.
 
 ## Operational limits
 
 - The WSL backend is opt-in with `MY_CODE_SANDBOX_BACKEND=wsl` and requires
   WSL2 plus Bubblewrap, `prlimit`, and `wslpath` in the default distribution.
-  Docker remains the default. Native Windows PTY jobs are unsupported; WSL
-  resource limits are process limits rather than Docker cgroup limits.
+  Guest PTY jobs additionally require Python 3. Docker remains the default;
+  Windows Docker PTY jobs remain unsupported. WSL resource limits are process
+  limits rather than Docker cgroup limits.
 - The VS Code extension is delivered as source and can be packaged as a VSIX;
   it is not published in the Marketplace.
 - Live SearXNG search needs a user-configured endpoint. Live provider cache
@@ -49,3 +55,26 @@ Each milestone's contract and failure behavior are in its linked
   Cost figures are estimates, not a spending cap or billing record.
 - P2 adds optional product breadth to an early Alpha. The P0/P1 security and
   reliability boundaries in [SECURITY.md](SECURITY.md) still apply.
+
+## Optional live acceptance
+
+Two opt-in checks now exercise the real integrations without storing secrets in
+the repository. Run them from a shell where you have already supplied your own
+service configuration. Neither check is enabled in CI:
+
+```powershell
+$env:MY_CODE_LIVE_WEB_SEARCH = "1"
+$env:MY_CODE_WEB_SEARCH_ENDPOINT = "https://your-searxng.example/search"
+go test -run '^TestLiveSearXNGSearch$' -count=1 ./internal/tools
+
+$env:MY_CODE_LIVE_CACHE_CHECK = "1"
+$env:MY_CODE_SMOKE_MODEL = "your-anthropic-model"
+# Supply ANTHROPIC_API_KEY privately in this shell before running the check.
+go test -run '^TestLiveAnthropicCache$' -count=1 ./internal/model
+```
+
+The search check sends one fixed `OpenAI` query and requires a usable JSON
+result. The cache check sends the same long prompt twice and requires provider
+usage to show a cache write followed by a read; it incurs two API charges.
+Neither check can establish that the user's configured rates match provider
+billing. Keep credentials and private endpoint URLs out of issues and logs.

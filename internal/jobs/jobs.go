@@ -151,7 +151,7 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Snapshot, error) {
 	var stdin io.WriteCloser
 	var stdout, stderr io.ReadCloser
 	var slave io.Closer
-	if spec.TTY {
+	if spec.TTY && !sandbox.GuestTTY(cmd) {
 		master, terminal, ptyErr := pty.Open()
 		if ptyErr != nil {
 			cancel()

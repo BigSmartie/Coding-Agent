@@ -121,8 +121,9 @@ The agent can update tasks with `task_update` and list them with `task_list`.
 `/jobs` shows background sandbox jobs. The agent can use `job_start`,
 `job_attach`/`job_read`, `job_poll`, `job_write`, `job_cancel`, and `job_list`.
 Background jobs have bounded runtime, concurrency, input and output. They are
-canceled when the session exits. PTY mode requires a Unix host (or WSL on
-Windows); native Windows supports non-PTY jobs. A successfully completed job can export one
+canceled when the session exits. PTY mode uses a Unix host PTY, or a guest PTY
+inside the WSL2/Bubblewrap backend on Windows. Windows Docker jobs support
+non-PTY mode only. A successfully completed job can export one
 UTF-8 text file (up to 1 MiB) through `job_export`; the destination change
 requires a reviewed diff and edit approval. See the
 [P1.3 jobs RFC](docs/rfc/p1-3-durable-tasks-jobs.md).
@@ -143,10 +144,11 @@ the offline tools, package caches and MCP server binaries you need, plus
 `/bin/sh` and `cp` for the fixed snapshot bootstrap.
 
 On Windows, a Docker-free backend is available when the default WSL2 Linux
-distribution already has Bubblewrap and `prlimit` installed:
+distribution already has Bubblewrap and `prlimit` installed. Interactive
+PTY jobs also require `/usr/bin/python3` in that distribution:
 
 ```powershell
-wsl --exec sh -lc 'command -v bwrap && command -v prlimit'
+wsl --exec sh -lc 'command -v bwrap && command -v prlimit && command -v python3'
 $env:MY_CODE_SANDBOX_BACKEND = "wsl"
 go run ./cmd/mycode
 ```
@@ -154,8 +156,10 @@ go run ./cmd/mycode
 The WSL backend runs Linux executables inside Bubblewrap, not Windows `.exe`
 files. It fails closed if WSL2 or its required binaries are unavailable. It
 uses the same filtered snapshot, reviewed edits, offline network namespace,
-bounded scratch, and artifact review as Docker. The default remains Docker;
-`MY_CODE_SANDBOX_IMAGE` is not needed for the WSL backend. See the
+bounded scratch, and artifact review as Docker. A PTY job allocates its terminal
+inside the isolated WSL guest; command and arguments are passed as separate
+arguments to a fixed helper, without shell interpolation. The default remains
+Docker; `MY_CODE_SANDBOX_IMAGE` is not needed for the WSL backend. See the
 [P2.5 RFC](docs/rfc/p2-5-wsl-sandbox.md).
 
 Commands run with no network, a non-root user, a read-only container root,

@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -73,6 +74,50 @@ func TestIntegrationBackgroundJobPTYCancelAndArtifact(t *testing.T) {
 	long, err := m.Start(context.Background(), Spec{Command: "/bin/sh", Args: []string{"-c", "sleep 120 & echo started; wait"}})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := m.Cancel(long.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitStatus(t, m, long.ID, "canceled")
+}
+
+func TestIntegrationWSLGuestPTY(t *testing.T) {
+	if runtime.GOOS != "windows" || os.Getenv("MY_CODE_WSL_INTEGRATION") != "1" {
+		t.Skip("Windows WSL2 integration is opt-in")
+	}
+	t.Setenv("MY_CODE_SANDBOX_BACKEND", "wsl")
+	m := New(t.TempDir(), "wsl-pty-test", allowPermission{}, nil)
+	defer m.Close()
+	job, err := m.Start(context.Background(), Spec{Command: "/bin/sh", Args: []string{"-c", `test -t 0 && echo tty-ready; read line; printf 'reply:%s\n' "$line"`}, TTY: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Write(context.Background(), job.ID, "hello\n"); err != nil {
+		t.Fatal(err)
+	}
+	waitStatus(t, m, job.ID, "completed")
+	read, err := m.Read(job.ID, 0, 4096)
+	if err != nil || !strings.Contains(read.Output, "tty-ready") || !strings.Contains(read.Output, "reply:hello") {
+		t.Fatalf("WSL guest PTY interaction failed: %#v, %v", read, err)
+	}
+	long, err := m.Start(context.Background(), Spec{Command: "/bin/sh", Args: []string{"-c", "echo running; exec sleep 30"}, TTY: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready := false
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); {
+		output, err := m.Read(long.ID, 0, 4096)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(output.Output, "running") {
+			ready = true
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !ready {
+		t.Fatal("WSL guest PTY job did not start")
 	}
 	if err := m.Cancel(long.ID); err != nil {
 		t.Fatal(err)

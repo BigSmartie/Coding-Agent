@@ -8,8 +8,10 @@ distribution must already contain `/usr/bin/bwrap`, `/usr/bin/prlimit`, and
 `/usr/bin/wslpath`; MyCode neither installs them nor falls back to the Windows
 host if preflight fails. Only Linux executables installed in that distribution
 can run. A WSL1 distribution is refused. The backend works for foreground
-commands, stdio MCP, and non-PTY background jobs with reviewed artifact export.
-Native Windows PTY jobs remain unsupported.
+commands, stdio MCP, and background jobs with reviewed artifact export. PTY
+jobs additionally require `/usr/bin/python3` in the default WSL distribution.
+The PTY is allocated inside Bubblewrap; Windows Docker PTY jobs remain
+unsupported.
 
 ## Isolation and resource limits
 
@@ -30,6 +32,10 @@ existing file-count and aggregate-size scan. The same path-contained reviewed
 export flow applies. Cancellation terminates the `wsl.exe` command; Bubblewrap
 uses `--die-with-parent` for its child. No Windows workspace path, credentials,
 proxy settings, or Windows executable directory is forwarded into the guest.
+For PTY jobs, a fixed Python `pty.spawn` wrapper receives the reviewed executable
+and its arguments as an argv vector. Model-controlled text is not interpolated
+into shell or Python source. The Windows side uses bounded pipes for input and
+output; the terminal device exists only in the isolated guest.
 
 The default WSL distribution and its runtime binaries are trusted components;
 the backend is not a defense against a compromised Windows account or WSL
@@ -47,6 +53,7 @@ socket connection, temporary edits, retained artifact export, and cancellation:
 ```powershell
 $env:MY_CODE_WSL_INTEGRATION = "1"
 go test -run '^TestWSLBackendIsolation$' -count=1 ./internal/sandbox
+go test -run '^TestIntegrationWSLGuestPTY$' -count=1 ./internal/jobs
 ```
 
 On a crash, `--die-with-parent` ends the isolated process and session recovery

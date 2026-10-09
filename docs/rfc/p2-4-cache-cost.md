@@ -41,4 +41,6 @@ cost total. Disabling the setting restores the prior request shape. Fixtures
 cover opt-in request encoding, cached token separation, invalid rates and
 usage, project override denial, and cost display in plain and TUI modes. Live
 cache-hit and billing verification requires a user-owned provider account and
-is not part of CI.
+is not part of CI. The opt-in `TestLiveAnthropicCache` sends two identical,
+billable requests with a long static prefix and requires provider-reported
+cache-write then cache-read tokens. It does not compare against an invoice.

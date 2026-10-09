@@ -43,4 +43,6 @@ Deterministic tests cover endpoint ownership and validation, fresh URL review,
 headless denial, HTML sanitization, response bounds, unsafe result filtering,
 and fixed search endpoint construction. The existing egress tests cover DNS,
 redirect, TLS, and traffic enforcement. A live search test requires a
-user-configured SearXNG instance and is not part of CI.
+user-configured SearXNG instance and is not part of CI. The opt-in
+`TestLiveSearXNGSearch` exercises the configured endpoint through the normal
+reviewed-tool and egress path with one fixed public query.
