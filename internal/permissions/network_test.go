@@ -105,19 +105,18 @@ func TestWebReadReviewsFullURLForEveryRequest(t *testing.T) {
 	}
 }
 
-func TestWebReadRedactsKnownSecretsInApproval(t *testing.T) {
+func TestWebReadRejectsKnownSecretsBeforeApproval(t *testing.T) {
 	manager, err := New(t.TempDir(), filepath.Join(t.TempDir(), "permissions.json"), func(_ context.Context, request Request) (PromptResult, error) {
-		details := strings.Join(request.Details, " ")
-		if strings.Contains(details, "secret-value") || !strings.Contains(details, "[REDACTED]") {
-			t.Fatalf("secret appeared in URL approval: %s", details)
-		}
-		return PromptResult{Decision: DecisionDenyOnce}, nil
+		t.Fatalf("secret-bearing URL reached approval: %#v", request)
+		return PromptResult{}, nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := safety.WithSecrets(context.Background(), "secret-value")
-	if err := manager.EnsureWebRequest(ctx, "https://example.com/search?q=secret-value"); err == nil {
-		t.Fatal("denied URL was allowed")
+	for _, raw := range []string{"https://example.com/search?q=secret-value", "https://example.com/search?q=secret%2Dvalue", "https://example.com/search?api_key=other-value"} {
+		if err := manager.EnsureWebRequest(ctx, raw); err == nil {
+			t.Fatalf("secret-bearing URL was allowed: %s", raw)
+		}
 	}
 }

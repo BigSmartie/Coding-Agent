@@ -3,6 +3,7 @@ package permissions
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/BigSmartie/Coding-Agent/internal/egress"
 	"github.com/BigSmartie/Coding-Agent/internal/safety"
@@ -27,12 +28,16 @@ func (m *Manager) EnsureWebRequest(ctx context.Context, rawURL string) error {
 	if err != nil {
 		return err
 	}
+	decoded, err := url.QueryUnescape(rawURL)
+	if err != nil || safety.Redact(ctx, rawURL) != rawURL || safety.Redact(ctx, decoded) != decoded {
+		return fmt.Errorf("web URL contains a credential or invalid encoding")
+	}
 	if m.prompt == nil {
 		return fmt.Errorf("web request requires interactive approval")
 	}
 	result, err := m.prompt(ctx, Request{
 		Kind: KindNetwork, Summary: "MyCode wants to read an external web URL",
-		Details: []string{"origin: " + origin, "URL: " + safety.Redact(ctx, rawURL), "The URL path and query will be sent to this site. Returned content is untrusted."},
+		Details: []string{"origin: " + origin, "URL: " + rawURL, "The URL path and query will be sent to this site. Returned content is untrusted."},
 		Scope:   origin + ":web-read",
 		Choices: []Choice{{Key: "n", Label: "deny once (default)", Decision: DecisionDenyOnce}, {Key: "y", Label: "allow this URL once", Decision: DecisionAllowOnce}},
 	})

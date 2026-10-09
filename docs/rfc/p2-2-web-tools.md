@@ -21,7 +21,8 @@ the query to upstream search engines according to its own configuration.
 ## Trust and failure behavior
 
 Every request requires fresh interactive approval showing its URL, including
-path and query; known credentials are redacted in the prompt. The existing
+path and query. URLs containing recognized credentials are rejected before the
+prompt, including percent-encoded credentials. The existing
 origin permission is checked separately by the shared egress client and can be
 persisted for that exact origin. In a
 headless session, URL approval fails closed even when the origin has a grant.
