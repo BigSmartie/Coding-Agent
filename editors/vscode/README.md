@@ -1,6 +1,6 @@
 # MyCode for VS Code
 
-This source extension adds **MyCode: Open in Workspace** and **MyCode: Review
+This extension adds **MyCode: Open in Workspace** and **MyCode: Review
 Current File** to the Command Palette. It starts the installed `mycode`
 executable in a VS Code terminal rooted at the selected workspace. The file
 command prepares a one-line prompt containing the active file's encoded
@@ -16,6 +16,5 @@ source text or starts a shell command using file content.
 
 Run `npm test` from this directory for the dependency-free unit suite. Open
 this directory in VS Code and press F5 to run an Extension Development Host.
-To create an installable VSIX, run `npx @vscode/vsce package --no-dependencies`
-here and use VS Code's **Install from VSIX** action. The extension is not
-published to the Marketplace.
+To install without Marketplace, run `npx @vscode/vsce package --no-dependencies`
+here and use VS Code's **Install from VSIX** action.
