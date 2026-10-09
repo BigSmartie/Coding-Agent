@@ -11,6 +11,7 @@ remaining checks that can run with the services available on the Windows host.
 | Checkpoint, crash replay, interrupted tool recovery, durable task | Passed | Focused `internal/session` journal and task tests. |
 | Go and VS Code unit checks | Passed | `go vet ./...`, `go test -count=1 -timeout=5m ./...`, `node --test editors/vscode/context.test.js`. |
 | VS Code installable package | Prepared | `mycode-vscode-0.1.0.vsix` built with `@vscode/vsce`; package is a local ignored artifact. |
+| SearXNG HTTPS JSON search | Passed | `TestLiveSearXNGSearch` returned seven bounded public results from the configured endpoint. |
 
 Windows Docker PTY is allocated inside the container by a fixed Python helper.
 The Docker CLI uses pipes on the Windows side, preserving the existing resource
@@ -21,11 +22,12 @@ to build the Alpine test image, so the Windows integration used the locally
 installed `python:3.12-slim` image. CI builds and tests the supplied Alpine
 image on Ubuntu.
 
-The following live acceptance needs external prerequisites:
+The SearXNG endpoint is now `https://search.bigsmartie.cn/search` in the
+Windows user settings. It runs on the user's server behind HTTPS and an
+address allowlist; see the [operations note](../ops/searxng.md). The endpoint
+was exercised through the normal MyCode egress client. The remaining live
+acceptance needs external prerequisites:
 
-* SearXNG: no HTTPS `/search` endpoint is configured. Set
-  `MY_CODE_LIVE_WEB_SEARCH=1` and `MY_CODE_WEB_SEARCH_ENDPOINT`, then run
-  `TestLiveSearXNGSearch` from `internal/tools`.
 * Anthropic cache: no Anthropic credential is configured. The optional
   `TestLiveAnthropicCache` in `internal/model` remains available when one is.
   DeepSeek's automatic prefix cache is a different provider feature and does
