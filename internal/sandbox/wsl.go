@@ -18,7 +18,10 @@ import (
 	"github.com/BigSmartie/Coding-Agent/internal/workspace"
 )
 
-const wslScratchEnv = "MYCODE_WSL_SCRATCH"
+const (
+	wslScratchEnv = "MYCODE_WSL_SCRATCH"
+	wslTTYEnv     = "MYCODE_WSL_GUEST_TTY"
+)
 
 // prepareWSL uses WSL2 as a Windows-hosted Linux VM and Bubblewrap inside it.
 // The guest sees only a filtered snapshot, a minimal read-only Linux runtime,
@@ -49,6 +52,11 @@ func prepareWSL(ctx context.Context, options Options) (*exec.Cmd, func(), error)
 	for _, binary := range []string{"/usr/bin/bwrap", "/usr/bin/prlimit", "/usr/bin/wslpath"} {
 		if _, err := wslOutput(ctx, wsl, "/usr/bin/test", "-x", binary); err != nil {
 			return nil, nil, fmt.Errorf("WSL sandbox requires %s in the default distribution", binary)
+		}
+	}
+	if options.TTY {
+		if _, err := wslOutput(ctx, wsl, "/usr/bin/test", "-x", "/usr/bin/python3"); err != nil {
+			return nil, nil, errors.New("WSL PTY jobs require /usr/bin/python3 in the default distribution")
 		}
 	}
 	snapshot, err := makeSnapshot(ctx, root)
@@ -106,6 +114,9 @@ func prepareWSL(ctx context.Context, options Options) (*exec.Cmd, func(), error)
 	cmd.Env = HostEnvironment()
 	if options.scratch != "" {
 		cmd.Env = append(cmd.Env, wslScratchEnv+"="+options.scratch)
+	}
+	if options.TTY {
+		cmd.Env = append(cmd.Env, wslTTYEnv+"=1")
 	}
 	cmd.WaitDelay = 12 * time.Second
 	return cmd, cleanup, nil
@@ -198,7 +209,12 @@ func wslBwrapArgs(options Options, root, snapshotPath, scratchPath string) ([]st
 		}
 		args = append(args, "--setenv", key, options.Env[key])
 	}
-	const bootstrap = `set -eu; cp -R /input/. /workspace/; cd "$1"; shift; exec "$@"`
+	bootstrap := `set -eu; cp -R /input/. /workspace/; cd "$1"; shift; exec "$@"`
+	if options.TTY {
+		// pty.spawn passes the executable and arguments as an argv vector. No
+		// model-controlled command text enters the fixed shell or Python source.
+		bootstrap = `set -eu; cp -R /input/. /workspace/; cd "$1"; shift; exec /usr/bin/python3 -c 'import os,pty,sys; sys.exit(os.waitstatus_to_exitcode(pty.spawn(sys.argv[1:])))' "$@"`
+	}
 	args = append(args, "--", "/bin/sh", "-c", bootstrap, "mycode-sandbox", path.Join("/workspace", filepath.ToSlash(relative)), options.Command)
 	return append(args, options.Args...), nil
 }
@@ -217,4 +233,18 @@ func wslJobScratch(prepared *exec.Cmd) string {
 		}
 	}
 	return ""
+}
+
+// GuestTTY reports that a prepared WSL command creates its PTY inside the
+// isolated guest, so the Windows caller should connect ordinary pipes.
+func GuestTTY(prepared *exec.Cmd) bool {
+	if prepared == nil || !strings.EqualFold(filepath.Base(prepared.Path), "wsl.exe") {
+		return false
+	}
+	for _, item := range prepared.Env {
+		if item == wslTTYEnv+"=1" {
+			return true
+		}
+	}
+	return false
 }

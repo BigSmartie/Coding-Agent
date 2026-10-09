@@ -82,9 +82,10 @@ profile's ACL; keep a custom `MY_CODE_HOME` private to that user.
 
 Session/history content remains plaintext after redaction. Event journaling,
 cross-process locking, checkpoints, context compaction, bounded background jobs,
-network grants, and a Windows WSL2 sandbox backend are implemented. Native
-Windows PTY jobs remain unsupported. Actual release signing requires a tag and
-GitHub's attestation service.
+network grants, and a Windows WSL2 sandbox backend are implemented. Windows
+WSL2 PTY jobs allocate the terminal inside the isolated Linux guest and require
+Python 3 there. Windows Docker PTY jobs remain unsupported. Actual release
+signing requires a tag and GitHub's attestation service.
 
 Automated checks use temporary data, a fake credential store and local HTTP/SSE
 fixtures. Live-provider, actual Docker, and WSL2 integration tests are explicit

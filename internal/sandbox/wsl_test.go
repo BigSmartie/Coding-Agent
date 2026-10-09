@@ -33,6 +33,24 @@ func TestWSLArgumentsKeepHostMountsOutAndValidateInputs(t *testing.T) {
 	}
 }
 
+func TestWSLTTYUsesGuestPTYWithoutInterpolatingCommand(t *testing.T) {
+	root := t.TempDir()
+	options := Options{Command: "/bin/echo", Args: []string{"hello'; touch /tmp/escaped; '"}, TTY: true}
+	args, err := wslBwrapArgs(options, root, "/mnt/c/private/snapshot", "/mnt/c/private/scratch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "pty.spawn(sys.argv[1:])") || args[len(args)-1] != options.Args[0] {
+		t.Fatalf("guest PTY arguments missing or changed: %#v", args)
+	}
+	for _, arg := range args {
+		if strings.Contains(arg, "pty.spawn") && strings.Contains(arg, options.Args[0]) {
+			t.Fatal("command argument was interpolated into PTY source")
+		}
+	}
+}
+
 func TestWSLBackendIsolation(t *testing.T) {
 	if runtime.GOOS != "windows" || os.Getenv("MY_CODE_WSL_INTEGRATION") != "1" {
 		t.Skip("opt-in Windows WSL2 integration")
