@@ -1,4 +1,4 @@
-# MyCode for VS Code
+# MythosCode for VS Code
 
 This extension adds **MyCode: Open in Workspace** and **MyCode: Review
 Current File** to the Command Palette. It starts the installed `mycode`
