@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/BigSmartie/Coding-Agent/internal/sandbox"
+	"github.com/BigSmartie/Coding-Agent/internal/taskstate"
 	"github.com/BigSmartie/Coding-Agent/internal/workspace"
 )
 
@@ -27,9 +28,56 @@ func Builtins(cwd string, permission PermissionManager, skillLoader SkillLoader)
 		editFileTool(),
 		patchFileTool(),
 		runCommandTool(),
+		taskUpdateTool(),
+		taskListTool(),
 		loadSkillTool(skillLoader),
 	}
+	definitions = append(definitions, jobTools()...)
 	return NewRegistry(definitions, Metadata{})
+}
+
+func taskUpdateTool() Definition {
+	return Definition{
+		Name:        "task_update",
+		Description: "Create or update durable task state for this session. Tasks survive context compaction and restart.",
+		InputSchema: objectSchema(map[string]any{
+			"id":      map[string]any{"type": "string"},
+			"title":   map[string]any{"type": "string"},
+			"details": map[string]any{"type": "string"},
+			"status":  map[string]any{"type": "string", "enum": []any{"pending", "in_progress", "completed", "canceled"}},
+		}, []string{"id", "title", "status"}),
+		Run: func(ctx context.Context, raw json.RawMessage, tc Context) Result {
+			if tc.Tasks == nil {
+				return Error("task state is unavailable")
+			}
+			var task taskstate.Task
+			if err := json.Unmarshal(raw, &task); err != nil {
+				return Error(err.Error())
+			}
+			if err := tc.Tasks.UpsertTask(ctx, task); err != nil {
+				return Error(err.Error())
+			}
+			return Success("Task " + task.ID + " updated")
+		},
+	}
+}
+
+func taskListTool() Definition {
+	return Definition{
+		Name:        "task_list",
+		Description: "List durable task state for this session.",
+		InputSchema: objectSchema(map[string]any{}, nil),
+		Run: func(_ context.Context, _ json.RawMessage, tc Context) Result {
+			if tc.Tasks == nil {
+				return Error("task state is unavailable")
+			}
+			data, err := json.Marshal(tc.Tasks.ListTasks())
+			if err != nil {
+				return Error(err.Error())
+			}
+			return Success(string(data))
+		},
+	}
 }
 
 func listFilesTool() Definition {

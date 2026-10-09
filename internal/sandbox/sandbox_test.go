@@ -3,9 +3,11 @@ package sandbox
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCommandPlanCannotInjectDockerArguments(t *testing.T) {
@@ -131,5 +133,85 @@ func TestOutputBound(t *testing.T) {
 	output := buffer.String()
 	if !strings.HasPrefix(output, strings.Repeat("x", 16)) || !strings.HasSuffix(output, "[output truncated]") || len(output) > 64 {
 		t.Fatalf("unexpected bounded output %q", output)
+	}
+}
+
+func TestRetainedPTYPlanIsSessionBound(t *testing.T) {
+	cwd := t.TempDir()
+	argv, err := commandArgs(Options{Workspace: cwd, Command: "/bin/sh", RetainContainer: true, TTY: true, SessionID: "session-1", scratch: filepath.Join(t.TempDir(), "workspace")}, cwd, filepath.Join(t.TempDir(), "workspace"), "sha256:trusted", "mycode-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := "\n" + strings.Join(argv, "\n") + "\n"
+	for _, required := range []string{"\n--tty\n", "\n--label\nmycode.session=session-1\n"} {
+		if !strings.Contains(joined, required) {
+			t.Fatalf("missing job option %q", required)
+		}
+	}
+	if strings.Contains(joined, "\n--rm\n") {
+		t.Fatal("retained container was marked for automatic removal before export")
+	}
+	if _, err := commandArgs(Options{Workspace: cwd, Command: "/bin/sh", SessionID: "../outside"}, cwd, filepath.Join(t.TempDir(), "workspace"), "sha256:trusted", "mycode-test"); err == nil {
+		t.Fatal("invalid sandbox session label was accepted")
+	}
+}
+
+func TestJobArtifactUsesBoundedNoFollowScratch(t *testing.T) {
+	root, err := os.MkdirTemp("", "mycode-jobs-test-artifact-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(root)
+	scratch := filepath.Join(root, "workspace")
+	if err := os.Mkdir(scratch, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scratch, "out.txt"), []byte("result"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := &exec.Cmd{Args: []string{"docker", "run", "--name", "mycode-" + strings.Repeat("a", 24), "--mount", "type=bind,src=" + scratch + ",dst=/workspace"}}
+	data, err := CopyArtifact(context.Background(), cmd, "out.txt")
+	if err != nil || string(data) != "result" {
+		t.Fatalf("scratch artifact missing: %q, %v", data, err)
+	}
+	for _, path := range []string{"../out.txt", "/etc/passwd", "sub/../out.txt"} {
+		if _, err := CopyArtifact(context.Background(), cmd, path); err == nil {
+			t.Fatalf("unsafe artifact path accepted: %q", path)
+		}
+	}
+	if err := os.Symlink(filepath.Join(scratch, "out.txt"), filepath.Join(scratch, "link.txt")); err == nil {
+		if _, err := CopyArtifact(context.Background(), cmd, "link.txt"); err == nil {
+			t.Fatal("symlink artifact was followed")
+		}
+	}
+	if err := os.WriteFile(filepath.Join(scratch, "huge.txt"), make([]byte, (1<<20)+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CopyArtifact(context.Background(), cmd, "huge.txt"); err == nil {
+		t.Fatal("oversized artifact was accepted")
+	}
+}
+
+func TestSessionScratchCleanupStaysWithinTempRoot(t *testing.T) {
+	id := "scratchtest" + strings.ReplaceAll(time.Now().UTC().Format("150405.000000000"), ".", "")
+	root, err := os.MkdirTemp("", "mycode-jobs-"+id+"-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("safe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "artifact.txt"), []byte("remove"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cleanupSessionScratch(id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatalf("orphan scratch retained: %v", err)
+	}
+	if data, err := os.ReadFile(outside); err != nil || string(data) != "safe" {
+		t.Fatalf("cleanup escaped target: %q, %v", data, err)
 	}
 }

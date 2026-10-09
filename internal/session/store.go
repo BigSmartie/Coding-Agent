@@ -15,6 +15,7 @@ import (
 
 	"github.com/BigSmartie/Coding-Agent/internal/message"
 	"github.com/BigSmartie/Coding-Agent/internal/safety"
+	"github.com/BigSmartie/Coding-Agent/internal/taskstate"
 )
 
 type Store struct {
@@ -33,6 +34,7 @@ type Record struct {
 	CreatedAt       time.Time         `json:"createdAt"`
 	UpdatedAt       time.Time         `json:"updatedAt"`
 	Messages        []message.Message `json:"messages"`
+	Tasks           []taskstate.Task  `json:"tasks,omitempty"`
 }
 
 type Summary struct {
@@ -74,6 +76,9 @@ func (s Store) Save(record Record) error {
 	}
 	record.SchemaVersion = 2
 	record.UpdatedAt = now
+	if err := validateTasks(record.Tasks); err != nil {
+		return err
+	}
 	sanitized, err := sanitizeRecord(s.Context, record)
 	if err != nil {
 		return err
@@ -188,6 +193,9 @@ func (s Store) Load(id string) (Record, error) {
 	if record.SchemaVersion > 2 {
 		return Record{}, fmt.Errorf("session was written by a newer schema version")
 	}
+	if err := validateTasks(record.Tasks); err != nil {
+		return Record{}, err
+	}
 	events, err := s.readJournal(id)
 	if err != nil {
 		return Record{}, err
@@ -223,10 +231,51 @@ func (s Store) Load(id string) (Record, error) {
 		}
 		record = checkpoint
 	}
-	if len(events) > 0 && events[len(events)-1].Sequence > record.JournalSequence && record.ResumeError == "" {
-		record.ResumeError = interruptedTurnError
+	for _, event := range events {
+		if event.Sequence <= record.JournalSequence || event.Kind != EventTaskUpdated {
+			continue
+		}
+		record.Tasks, err = taskstate.Upsert(record.Tasks, *event.Task)
+		if err != nil {
+			return Record{}, err
+		}
+	}
+	if record.ResumeError == "" {
+		for _, event := range events {
+			if event.Sequence <= record.JournalSequence || isAsyncJobEvent(event.Kind) {
+				continue
+			}
+			record.ResumeError = interruptedTurnError
+			break
+		}
 	}
 	return record, nil
+}
+
+func isAsyncJobEvent(kind EventKind) bool {
+	switch kind {
+	case EventJobCompleted, EventJobFailed, EventJobCanceled:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateTasks(tasks []taskstate.Task) error {
+	if len(tasks) > 32 {
+		return fmt.Errorf("session task limit exceeded")
+	}
+	seen := map[string]bool{}
+	for _, task := range tasks {
+		if err := taskstate.Validate(task); err != nil {
+			return err
+		}
+		if seen[task.ID] {
+			return fmt.Errorf("duplicate session task id")
+		}
+		seen[task.ID] = true
+	}
+	return nil
 }
 
 func (s Store) Latest() (Record, error) {

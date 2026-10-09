@@ -116,6 +116,17 @@ state, inspect the workspace first, then use
 `mycode --resume <id|latest> --recover-interrupted` to abandon the unfinished
 turn at its last checkpoint. The tool is never executed again automatically.
 
+`/tasks` shows structured task state saved outside the compacted transcript.
+The agent can update tasks with `task_update` and list them with `task_list`.
+`/jobs` shows background sandbox jobs. The agent can use `job_start`,
+`job_attach`/`job_read`, `job_poll`, `job_write`, `job_cancel`, and `job_list`.
+Background jobs have bounded runtime, concurrency, input and output. They are
+canceled when the session exits. PTY mode requires a Unix host (or WSL on
+Windows); native Windows supports non-PTY jobs. A successfully completed job can export one
+UTF-8 text file (up to 1 MiB) through `job_export`; the destination change
+requires a reviewed diff and edit approval. See the
+[P1.3 jobs RFC](docs/rfc/p1-3-durable-tasks-jobs.md).
+
 ## Commands and MCP in an Isolated Sandbox
 
 Install/start Docker with Linux containers and explicitly build a trusted image:
@@ -133,8 +144,11 @@ the offline tools, package caches and MCP server binaries you need, plus
 
 Commands run with no network, a non-root user, a read-only container root,
 limited resources and a filtered workspace snapshot mounted read-only at `/input`.
-The snapshot is copied into a 512 MiB memory-backed `/workspace`; `/tmp` is limited
-to 256 MiB, container memory to 1 GiB, and process count to 128. Container log
+The snapshot is copied into a 512 MiB memory-backed `/workspace` for foreground
+commands. Background jobs use a session-private temporary scratch mount so an
+artifact can be reviewed after the command exits; a per-file limit and periodic
+aggregate size scan cancel excessive writes. `/tmp` is limited to 256 MiB,
+container memory to 1 GiB, and process count to 128. Container log
 files are disabled, so output cannot fill Docker's host log storage. **Changes made by commands
 or MCP are temporary.** Use approved `write_file`, `edit_file`, `modify_file` and
 `patch_file` calls to persist source edits. Git metadata, app state, common secret

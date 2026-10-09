@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -34,7 +35,12 @@ type Options struct {
 	Command   string
 	Args      []string
 	// Env is explicit server configuration. Host environment is never forwarded.
-	Env map[string]string
+	Env             map[string]string
+	TTY             bool
+	RetainContainer bool
+	SessionID       string
+	scratch         string
+	jobRoot         string
 }
 
 // Prepare returns a command ready for Run or Start and an idempotent cleanup.
@@ -87,8 +93,31 @@ func Prepare(ctx context.Context, options Options) (*exec.Cmd, func(), error) {
 		return nil, nil, err
 	}
 	name := "mycode-" + hex.EncodeToString(nonce[:])
+	if options.RetainContainer {
+		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`).MatchString(options.SessionID) {
+			os.RemoveAll(filepath.Dir(snapshot))
+			return nil, nil, errors.New("retained sandbox job requires a valid session id")
+		}
+		options.jobRoot, err = os.MkdirTemp("", "mycode-jobs-"+options.SessionID+"-")
+		if err != nil {
+			os.RemoveAll(filepath.Dir(snapshot))
+			return nil, nil, err
+		}
+		options.scratch = filepath.Join(options.jobRoot, "workspace")
+		if err = os.Mkdir(options.scratch, 0o777); err == nil {
+			err = os.Chmod(options.scratch, 0o1777)
+		}
+		if err != nil {
+			os.RemoveAll(options.jobRoot)
+			os.RemoveAll(filepath.Dir(snapshot))
+			return nil, nil, err
+		}
+	}
 	argv, err := commandArgs(options, root, snapshot, fields[0], name)
 	if err != nil {
+		if options.jobRoot != "" {
+			os.RemoveAll(options.jobRoot)
+		}
 		os.RemoveAll(filepath.Dir(snapshot))
 		return nil, nil, err
 	}
@@ -100,7 +129,15 @@ func Prepare(ctx context.Context, options Options) (*exec.Cmd, func(), error) {
 		_ = stopper.Run()
 	}
 	var once sync.Once
-	cleanup := func() { once.Do(func() { stop(); _ = os.RemoveAll(filepath.Dir(snapshot)) }) }
+	cleanup := func() {
+		once.Do(func() {
+			stop()
+			_ = os.RemoveAll(filepath.Dir(snapshot))
+			if options.jobRoot != "" {
+				_ = os.RemoveAll(options.jobRoot)
+			}
+		})
+	}
 	cmd := exec.CommandContext(ctx, docker, argv...)
 	cmd.Env = HostEnvironment()
 	cmd.Cancel = func() error {
@@ -145,7 +182,27 @@ func commandArgs(options Options, root, snapshot, image, name string) ([]string,
 	if strings.Contains(snapshot, ",") {
 		return nil, errors.New("sandbox temporary path cannot contain a comma")
 	}
-	args := []string{"run", "--rm", "--pull=never", "--name", name, "--interactive", "--network=none", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only", "--log-driver=none", "--pids-limit=128", "--memory=1g", "--cpus=2", "--user=65534:65534", "--tmpfs=/tmp:rw,nosuid,nodev,size=256m", "--tmpfs=/workspace:rw,nosuid,nodev,size=512m,mode=1777", "--mount", "type=bind,src=" + snapshot + ",dst=/input,readonly", "--workdir", "/workspace", "--env", "HOME=/tmp", "--env", "TMPDIR=/tmp", "--env", "PATH=/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin", "--env", "GOCACHE=/tmp/go-build", "--env", "GOTOOLCHAIN=local"}
+	args := []string{"run", "--pull=never", "--name", name, "--interactive", "--network=none", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only", "--log-driver=none", "--pids-limit=128", "--memory=1g", "--cpus=2", "--ulimit", "fsize=536870912:536870912", "--user=65534:65534", "--tmpfs=/tmp:rw,nosuid,nodev,size=256m", "--mount", "type=bind,src=" + snapshot + ",dst=/input,readonly", "--workdir", "/workspace", "--env", "HOME=/tmp", "--env", "TMPDIR=/tmp", "--env", "PATH=/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin", "--env", "GOCACHE=/tmp/go-build", "--env", "GOTOOLCHAIN=local"}
+	if options.RetainContainer {
+		if options.scratch == "" || strings.Contains(options.scratch, ",") {
+			return nil, errors.New("invalid job scratch path")
+		}
+		args = append(args, "--mount", "type=bind,src="+options.scratch+",dst=/workspace")
+	} else {
+		args = append(args, "--tmpfs=/workspace:rw,nosuid,nodev,size=512m,mode=1777")
+	}
+	if !options.RetainContainer {
+		args = append(args, "--rm")
+	}
+	if options.TTY {
+		args = append(args, "--tty")
+	}
+	if options.SessionID != "" {
+		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`).MatchString(options.SessionID) {
+			return nil, errors.New("invalid sandbox session id")
+		}
+		args = append(args, "--label", "mycode.session="+options.SessionID)
+	}
 	keys := make([]string, 0, len(options.Env))
 	for key := range options.Env {
 		keys = append(keys, key)
@@ -167,6 +224,174 @@ func commandArgs(options Options, root, snapshot, image, name string) ([]string,
 	const bootstrap = `set -eu; cp -R /input/. /workspace/; cd "$1"; shift; exec "$@"`
 	args = append(args, "--entrypoint", "/bin/sh", image, "-c", bootstrap, "mycode-sandbox", path.Join("/workspace", filepath.ToSlash(relative)), options.Command)
 	return append(args, options.Args...), nil
+}
+
+// CleanupSessionContainers removes bounded, labelled containers left after an
+// unclean process exit. A session lock must be held by the caller.
+func CleanupSessionContainers(ctx context.Context, workspaceRoot, sessionID string) error {
+	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`).MatchString(sessionID) {
+		return fmt.Errorf("invalid sandbox session id")
+	}
+	docker, err := exec.LookPath("docker")
+	if errors.Is(err, exec.ErrNotFound) {
+		return cleanupSessionScratch(sessionID)
+	}
+	if err != nil {
+		return err
+	}
+	docker, err = filepath.Abs(docker)
+	if err != nil {
+		return err
+	}
+	root, err := workspace.Canonical(workspaceRoot)
+	if err != nil {
+		return err
+	}
+	if workspace.Within(root, docker) {
+		return fmt.Errorf("sandbox refuses a Docker executable inside the untrusted workspace")
+	}
+	cleanupCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	list := exec.CommandContext(cleanupCtx, docker, "ps", "-aq", "--filter", "label=mycode.session="+sessionID)
+	list.Env = HostEnvironment()
+	output := &LimitedBuffer{Limit: 4096}
+	list.Stdout, list.Stderr = output, output
+	if err := list.Run(); err != nil {
+		return fmt.Errorf("cannot inspect previous sandbox jobs: %w", err)
+	}
+	ids := strings.Fields(output.String())
+	if len(ids) > 32 {
+		return fmt.Errorf("too many previous sandbox containers")
+	}
+	for _, id := range ids {
+		if !regexp.MustCompile(`^[a-f0-9]{12,64}$`).MatchString(id) {
+			return fmt.Errorf("invalid previous sandbox container id")
+		}
+		remove := exec.CommandContext(cleanupCtx, docker, "rm", "--force", id)
+		remove.Env = HostEnvironment()
+		remove.Stdout, remove.Stderr = io.Discard, io.Discard
+		if err := remove.Run(); err != nil {
+			return fmt.Errorf("cannot remove previous sandbox container: %w", err)
+		}
+	}
+	return cleanupSessionScratch(sessionID)
+}
+
+func cleanupSessionScratch(sessionID string) error {
+	temp, err := filepath.Abs(os.TempDir())
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(temp)
+	if err != nil {
+		return err
+	}
+	prefix := "mycode-jobs-" + sessionID + "-"
+	removed := 0
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), prefix) {
+			continue
+		}
+		removed++
+		if removed > 32 {
+			return fmt.Errorf("too many previous sandbox scratch directories")
+		}
+		target, err := filepath.Abs(filepath.Join(temp, entry.Name()))
+		if err != nil || !workspace.Within(temp, target) || target == temp {
+			return fmt.Errorf("invalid previous sandbox scratch path")
+		}
+		info, err := os.Lstat(target)
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("invalid previous sandbox scratch directory")
+		}
+		if err := os.RemoveAll(target); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// CopyArtifact reads one regular file from a retained job's isolated scratch
+// mount. It never writes into the host workspace; callers review/export.
+func CopyArtifact(ctx context.Context, prepared *exec.Cmd, relative string) ([]byte, error) {
+	if prepared == nil || strings.TrimSpace(relative) == "" || strings.ContainsAny(relative, "\\:\x00\r\n") || strings.HasPrefix(relative, "/") {
+		return nil, fmt.Errorf("artifact path must be relative to sandbox workspace")
+	}
+	clean := path.Clean(relative)
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || clean != relative {
+		return nil, fmt.Errorf("artifact path escapes sandbox workspace")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	name, scratch := "", jobScratch(prepared)
+	for i, arg := range prepared.Args {
+		if arg == "--name" && i+1 < len(prepared.Args) {
+			name = prepared.Args[i+1]
+		}
+	}
+	if !regexp.MustCompile(`^mycode-[a-f0-9]{24}$`).MatchString(name) {
+		return nil, fmt.Errorf("invalid sandbox container identity")
+	}
+	if filepath.Base(scratch) != "workspace" || !strings.HasPrefix(filepath.Base(filepath.Dir(scratch)), "mycode-jobs-") || !workspace.Within(os.TempDir(), scratch) {
+		return nil, fmt.Errorf("invalid sandbox scratch identity")
+	}
+	access, err := workspace.Open(scratch)
+	if err != nil {
+		return nil, err
+	}
+	defer access.Close()
+	return access.ReadFile(filepath.FromSlash(clean), 1<<20)
+}
+
+func jobScratch(prepared *exec.Cmd) string {
+	if prepared == nil {
+		return ""
+	}
+	for i, arg := range prepared.Args {
+		if arg == "--mount" && i+1 < len(prepared.Args) {
+			mount := prepared.Args[i+1]
+			if strings.HasPrefix(mount, "type=bind,src=") && strings.HasSuffix(mount, ",dst=/workspace") {
+				return strings.TrimSuffix(strings.TrimPrefix(mount, "type=bind,src="), ",dst=/workspace")
+			}
+		}
+	}
+	return ""
+}
+
+// CheckJobScratchBounds is a best-effort disk guard for retained job files.
+// Docker also enforces a per-file fsize limit; the scan never follows links.
+func CheckJobScratchBounds(prepared *exec.Cmd) error {
+	scratch := jobScratch(prepared)
+	if filepath.Base(scratch) != "workspace" || !strings.HasPrefix(filepath.Base(filepath.Dir(scratch)), "mycode-jobs-") || !workspace.Within(os.TempDir(), scratch) {
+		return fmt.Errorf("invalid job scratch identity")
+	}
+	var total int64
+	entries := 0
+	err := filepath.WalkDir(scratch, func(_ string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		entries++
+		if entries > maxSnapshotFiles {
+			return fmt.Errorf("job scratch entry limit reached")
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() {
+			total += info.Size()
+			if total > 512<<20 {
+				return fmt.Errorf("job scratch exceeds 512 MiB")
+			}
+		}
+		return nil
+	})
+	return err
 }
 
 // HostEnvironment is deliberately small. It supports the installed Docker CLI

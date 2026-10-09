@@ -17,6 +17,8 @@ type SlashCommand struct {
 var SlashCommands = []SlashCommand{
 	{"/help", "/help", "Show available slash commands."},
 	{"/tools", "/tools", "List tools available to the coding agent and tool shortcuts."},
+	{"/tasks", "/tasks", "List durable structured tasks in this session."},
+	{"/jobs", "/jobs", "List bounded background jobs in this session."},
 	{"/status", "/status", "Show current model and config source."},
 	{"/model", "/model", "Show the current model."},
 	{"/model", "/model <model-name>", "Persist a model override into ~/" + brand.ConfigDirName + "/settings.json."},
