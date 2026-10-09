@@ -62,7 +62,7 @@ func TestRepositoryTaskRunsOnPinnedDisposableSnapshot(t *testing.T) {
 		}
 		return &scriptedModel{t: t}, nil
 	})
-	if err != nil || !report.Passed || len(report.ToolNames) != 1 || report.ToolNames[0] != "write_file" {
+	if err != nil || report.SchemaVersion != 1 || !report.Passed || len(report.ToolNames) != 1 || report.ToolNames[0] != "write_file" {
 		t.Fatalf("evaluation failed: %#v, %v", report, err)
 	}
 	if _, err := os.Stat(filepath.Join(repo, "answer.txt")); !os.IsNotExist(err) {
@@ -71,5 +71,9 @@ func TestRepositoryTaskRunsOnPinnedDisposableSnapshot(t *testing.T) {
 	spec.ExpectedFiles = map[string]string{"../outside": "absent"}
 	if _, err := Run(context.Background(), spec, func(*tools.Registry) (message.Model, error) { return &scriptedModel{t: t}, nil }); err == nil {
 		t.Fatal("unsafe expectation path accepted")
+	}
+	spec.SchemaVersion = 2
+	if _, err := Run(context.Background(), spec, func(*tools.Registry) (message.Model, error) { return &scriptedModel{t: t}, nil }); err == nil {
+		t.Fatal("future manifest schema accepted")
 	}
 }

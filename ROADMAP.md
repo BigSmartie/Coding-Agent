@@ -58,12 +58,21 @@ while task state survives restart and context compaction.
 
 ### P1.4 Controlled network, provider conformance, and remote MCP
 
+Implemented in [P1.4 RFC](docs/rfc/p1-4-controlled-network-mcp.md). The
+guarded egress transport and MCP operation approval fail closed; live provider
+checks remain opt-in and require user credentials.
+
 - deny-by-default egress broker with exact origin grants and audit events
 - SSRF, redirect, DNS-rebinding, credential-scope, traffic, and response limits
 - one conformance suite for Anthropic, OpenAI, gateways, and compatible providers
 - MCP capability negotiation, pagination, notifications, cancellation, and Streamable HTTP
 
 ### P1.5 Sub-agents, evaluation, and release engineering
+
+Implemented in [P1.5 RFC](docs/rfc/p1-5-subagents-eval-release.md). Evaluation
+uses a pinned disposable snapshot; the tag release workflow is defined and
+locally dry-run, while actual signing requires a release tag and GitHub's
+attestation service.
 
 - bounded sub-agents with narrower tools, paths, network, concurrency, and token budgets
 - sanitized local traces and reproducible repository-task evaluation

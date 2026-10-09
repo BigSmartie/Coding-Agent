@@ -4,18 +4,19 @@
 
 `delegate_readonly` runs a short repository investigation under a selected workspace subdirectory. The child receives only `list_files`, `grep_files`, and `read_file`. It cannot execute commands, edit files, call MCP, use network tools, or start another child. The path resolver and file access layer enforce the selected directory even through links. One session can start at most eight children, at most two concurrently. Each child has eight model steps, at most 16 tool calls, a 90-second deadline, an 8,192-token context window, a 1,024-token output setting, and a 12,000-token cumulative reported-use cutoff. If a provider does not report usage, the step and time limits still apply. Child results are capped at 8 KiB and redacted before returning to the parent.
 
-The trace file is stored outside the repository beside session state as `<session-id>.subagents.json`. It records only a child ID, scope digest, status, tool names, token count, and elapsed time. It contains no prompts, tool arguments, file contents, model output, or credentials. Both start and completion/failure records use private atomic writes and typed session journal events. A failed journal or trace write fails the child call. The trace file is additive, but older binaries cannot replay the new journal events; restore a pre-P1.5 session backup or start a new session when rolling back.
+The trace file is stored outside the repository beside session state as `<session-id>.subagents.json`. Each event has `schemaVersion: 1` and records only a child ID, scope digest, status, tool names, token count, and elapsed time. It contains no prompts, tool arguments, file contents, model output, or credentials. Both start and completion/failure records use private atomic writes and typed session journal events. A failed journal or trace write fails the child call. The trace file is additive, but older binaries cannot replay the new journal events; restore a pre-P1.5 session backup or start a new session when rolling back.
 
 ## Reproducible repository-task evaluation
 
 `go run ./cmd/mycode-eval -manifest task.json` evaluates a pinned Git commit in a disposable snapshot. The manifest supplies an ID, repository path, full commit SHA, task prompt, and expected file SHA-256 digests (or `absent`). The runner exports that commit with `git archive`, rejects links, special files, protected paths, traversal, and oversized snapshots, and runs the selected model with a restricted set of file-read and file-edit tools. Command, MCP, network, and delegation tools are absent. Automatic edit approval applies only inside the disposable snapshot. The report includes pass/fail, checked paths, token count, tool names, and duration; it excludes the prompt and file contents. Source files and the user's workspace remain untouched.
 
-Live evaluation is opt-in and may use billable provider calls. The deterministic test fixture uses a scripted model and a temporary Git repository, verifying that the same task mutates only the snapshot and that expected file hashes match. A task manifest should pin a commit from a repository whose contents the evaluator is allowed to read. The evaluation report format is versioned by this RFC; new fields may be added without changing existing meanings.
+Live evaluation is opt-in and may use billable provider calls. The deterministic test fixture uses a scripted model and a temporary Git repository, verifying that the same task mutates only the snapshot and that expected file hashes match. A task manifest should pin a commit from a repository whose contents the evaluator is allowed to read. The manifest accepts `schemaVersion: 1` or an omitted version for compatibility and rejects unknown versions. Reports always carry `schemaVersion: 1`; new fields may be added without changing existing meanings.
 
 Example manifest (replace the repository, commit, and digest with your own):
 
 ```json
 {
+  "schemaVersion": 1,
   "id": "fix-small-bug",
   "repository": ".",
   "commit": "0123456789abcdef0123456789abcdef01234567",

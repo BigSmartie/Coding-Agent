@@ -58,7 +58,7 @@ func TestReadOnlySubagentRestrictsToolsPathsAndTrace(t *testing.T) {
 		t.Fatalf("child failed: %q, %v", answer, err)
 	}
 	data, err := os.ReadFile(tracePath)
-	if err != nil || !strings.Contains(string(data), `"status": "completed"`) || strings.Contains(string(data), "scoped evidence") || strings.Contains(string(data), "Read the scoped source") {
+	if err != nil || !strings.Contains(string(data), `"schemaVersion": 1`) || !strings.Contains(string(data), `"status": "completed"`) || strings.Contains(string(data), "scoped evidence") || strings.Contains(string(data), "Read the scoped source") {
 		t.Fatalf("trace leaked task/content or missed completion: %s, %v", data, err)
 	}
 	if _, err := manager.Run(context.Background(), "escape", ".."); err == nil {

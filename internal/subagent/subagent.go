@@ -34,12 +34,13 @@ const (
 )
 
 type Trace struct {
-	ID          string   `json:"id"`
-	Status      string   `json:"status"`
-	ScopeDigest string   `json:"scopeDigest"`
-	ToolNames   []string `json:"toolNames,omitempty"`
-	Tokens      int      `json:"tokens,omitempty"`
-	DurationMS  int64    `json:"durationMs,omitempty"`
+	SchemaVersion int      `json:"schemaVersion"`
+	ID            string   `json:"id"`
+	Status        string   `json:"status"`
+	ScopeDigest   string   `json:"scopeDigest"`
+	ToolNames     []string `json:"toolNames,omitempty"`
+	Tokens        int      `json:"tokens,omitempty"`
+	DurationMS    int64    `json:"durationMs,omitempty"`
 }
 
 type Manager struct {
@@ -117,7 +118,7 @@ func (m *Manager) Run(ctx context.Context, task, path string) (answer string, ru
 	}
 	relative, _ := filepath.Rel(root, scope)
 	digest := sha256.Sum256([]byte(filepath.ToSlash(relative)))
-	trace := Trace{ID: fmt.Sprintf("sa-%08d", callNumber), Status: "started", ScopeDigest: hex.EncodeToString(digest[:8])}
+	trace := Trace{SchemaVersion: 1, ID: fmt.Sprintf("sa-%08d", callNumber), Status: "started", ScopeDigest: hex.EncodeToString(digest[:8])}
 	if m.WriteTrace != nil {
 		if err := m.WriteTrace(trace); err != nil {
 			return "", err

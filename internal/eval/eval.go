@@ -29,6 +29,7 @@ const maxSnapshotBytes = 50 << 20
 var commitPattern = regexp.MustCompile(`^[a-fA-F0-9]{40,64}$`)
 
 type Spec struct {
+	SchemaVersion int               `json:"schemaVersion,omitempty"` // Omitted means version 1.
 	ID            string            `json:"id"`
 	Repository    string            `json:"repository"`
 	Commit        string            `json:"commit"`
@@ -37,13 +38,14 @@ type Spec struct {
 }
 
 type Report struct {
-	ID         string   `json:"id"`
-	Commit     string   `json:"commit"`
-	Passed     bool     `json:"passed"`
-	Checks     []string `json:"checks"`
-	ToolNames  []string `json:"toolNames"`
-	Tokens     int      `json:"tokens"`
-	DurationMS int64    `json:"durationMs"`
+	SchemaVersion int      `json:"schemaVersion"`
+	ID            string   `json:"id"`
+	Commit        string   `json:"commit"`
+	Passed        bool     `json:"passed"`
+	Checks        []string `json:"checks"`
+	ToolNames     []string `json:"toolNames"`
+	Tokens        int      `json:"tokens"`
+	DurationMS    int64    `json:"durationMs"`
 }
 
 // ModelFactory receives only the filtered evaluation registry. A live CLI
@@ -51,8 +53,8 @@ type Report struct {
 type ModelFactory func(*tools.Registry) (message.Model, error)
 
 func Run(ctx context.Context, spec Spec, factory ModelFactory) (Report, error) {
-	report := Report{ID: spec.ID, Commit: spec.Commit}
-	if spec.ID == "" || len(spec.ID) > 64 || len(spec.Prompt) == 0 || len(spec.Prompt) > 8192 || !commitPattern.MatchString(spec.Commit) || len(spec.ExpectedFiles) == 0 || factory == nil {
+	report := Report{SchemaVersion: 1, ID: spec.ID, Commit: spec.Commit}
+	if (spec.SchemaVersion != 0 && spec.SchemaVersion != 1) || spec.ID == "" || len(spec.ID) > 64 || len(spec.Prompt) == 0 || len(spec.Prompt) > 8192 || !commitPattern.MatchString(spec.Commit) || len(spec.ExpectedFiles) == 0 || factory == nil {
 		return report, fmt.Errorf("invalid repository evaluation spec")
 	}
 	for path, want := range spec.ExpectedFiles {
