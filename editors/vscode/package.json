@@ -1,0 +1,33 @@
+{
+  "name": "mycode-vscode",
+  "displayName": "MyCode",
+  "description": "Open MyCode in the active workspace and prepare file context for review.",
+  "version": "0.1.0",
+  "publisher": "bigsmartie",
+  "private": true,
+  "engines": { "vscode": "^1.85.0" },
+  "extensionKind": ["workspace"],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onCommand:mycode.openWorkspace",
+    "onCommand:mycode.openCurrentFile"
+  ],
+  "contributes": {
+    "commands": [
+      { "command": "mycode.openWorkspace", "title": "MyCode: Open in Workspace" },
+      { "command": "mycode.openCurrentFile", "title": "MyCode: Review Current File" }
+    ],
+    "configuration": {
+      "title": "MyCode",
+      "properties": {
+        "mycode.executablePath": {
+          "type": "string",
+          "default": "mycode",
+          "scope": "application",
+          "description": "User-level MyCode executable path. Workspace settings cannot override it."
+        }
+      }
+    }
+  },
+  "scripts": { "test": "node --test" }
+}
