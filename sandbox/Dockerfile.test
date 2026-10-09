@@ -1,6 +1,6 @@
 # Only used by the explicit CI sandbox smoke test. Runtime never pulls images.
 FROM alpine:3.22
-RUN command -v sh && command -v cp && mkdir -p /workspace && chmod 0755 /workspace
+RUN apk add --no-cache python3 && command -v sh && command -v cp && mkdir -p /workspace && chmod 0755 /workspace
 WORKDIR /workspace
 USER 65534:65534
 CMD ["/bin/sh"]

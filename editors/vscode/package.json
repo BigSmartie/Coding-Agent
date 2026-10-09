@@ -4,7 +4,13 @@
   "description": "Open MyCode in the active workspace and prepare file context for review.",
   "version": "0.1.0",
   "publisher": "bigsmartie",
-  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BigSmartie/Coding-Agent.git",
+    "directory": "editors/vscode"
+  },
+  "license": "MIT",
+  "categories": ["Other"],
   "engines": { "vscode": "^1.85.0" },
   "extensionKind": ["workspace"],
   "main": "./extension.js",

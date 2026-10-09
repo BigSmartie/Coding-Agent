@@ -122,8 +122,7 @@ The agent can update tasks with `task_update` and list them with `task_list`.
 `job_attach`/`job_read`, `job_poll`, `job_write`, `job_cancel`, and `job_list`.
 Background jobs have bounded runtime, concurrency, input and output. They are
 canceled when the session exits. PTY mode uses a Unix host PTY, or a guest PTY
-inside the WSL2/Bubblewrap backend on Windows. Windows Docker jobs support
-non-PTY mode only. A successfully completed job can export one
+inside Docker or WSL2/Bubblewrap on Windows. A successfully completed job can export one
 UTF-8 text file (up to 1 MiB) through `job_export`; the destination change
 requires a reviewed diff and edit approval. See the
 [P1.3 jobs RFC](docs/rfc/p1-3-durable-tasks-jobs.md).
@@ -141,7 +140,8 @@ go run ./cmd/mycode
 Runtime verifies that the image already exists; it never pulls an image and
 never falls back to running a model command on the host. Images should contain
 the offline tools, package caches and MCP server binaries you need, plus
-`/bin/sh` and `cp` for the fixed snapshot bootstrap.
+`/bin/sh` and `cp` for the fixed snapshot bootstrap. Windows Docker PTY jobs
+also require `python3` in the trusted image; the supplied Dockerfile includes it.
 
 On Windows, a Docker-free backend is available when the default WSL2 Linux
 distribution already has Bubblewrap and `prlimit` installed. Interactive
