@@ -1,0 +1,65 @@
+name: Signed release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.25.4'
+          cache-dependency-path: go.sum
+      - name: Validate source
+        run: |
+          go mod verify
+          go vet ./...
+          go test ./...
+      - name: Build reproducible archives, SBOM, and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          epoch="$(git log -1 --format=%ct)"
+          mkdir -p raw dist
+          go build -trimpath -buildvcs=false -ldflags='-buildid=' -o .releasepack ./cmd/releasepack
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            binary="raw/mycode-${os}-${arch}"
+            if [ "$os" = windows ]; then binary="${binary}.exe"; fi
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags='-buildid=' -o "$binary" ./cmd/mycode
+            ./.releasepack pack -binary "$binary" -version "$GITHUB_REF_NAME" -os "$os" -arch "$arch" -epoch "$epoch" -out dist
+          done
+          ./.releasepack sbom -version "$GITHUB_REF_NAME" -epoch "$epoch" -out dist/mycode.spdx.json
+          ./.releasepack checksums -out dist
+      - name: Sign release artifact provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.spdx.json
+            dist/SHA256SUMS
+      - name: Sign SBOM attestation
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+          sbom-path: dist/mycode.spdx.json
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes

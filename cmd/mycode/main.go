@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 	"github.com/BigSmartie/Coding-Agent/internal/safety"
 	"github.com/BigSmartie/Coding-Agent/internal/session"
 	"github.com/BigSmartie/Coding-Agent/internal/skills"
+	"github.com/BigSmartie/Coding-Agent/internal/subagent"
 	"github.com/BigSmartie/Coding-Agent/internal/taskstate"
 	"github.com/BigSmartie/Coding-Agent/internal/terminal"
 	"github.com/BigSmartie/Coding-Agent/internal/tools"
@@ -82,7 +84,33 @@ func run(ctx context.Context, argv []string) error {
 	discoveredSkills, _ := skillStore.Discover(ctx)
 	toolRegistry := tools.Builtins(cwd, nil, skillStore)
 	servers := effectiveSettings.MCPServers
+	sessionID := startup.ResumeID
 	var journalRef atomic.Pointer[session.Journal]
+	var childTraces subagent.TraceStore
+	childManager := subagent.New(cwd, runtimePtr(runtime, runtimeErr), func(event subagent.Trace) error {
+		if sessionID == "" {
+			return fmt.Errorf("session id is unavailable for subagent trace")
+		}
+		current := journalRef.Load()
+		if current == nil {
+			return fmt.Errorf("session journal is unavailable for subagent trace")
+		}
+		var kind session.EventKind
+		switch event.Status {
+		case "started":
+			kind = session.EventSubagentStarted
+		case "completed":
+			kind = session.EventSubagentCompleted
+		case "failed":
+			kind = session.EventSubagentFailed
+		default:
+			return fmt.Errorf("unknown subagent status")
+		}
+		if _, err := current.Append(session.Event{Kind: kind, SubagentID: event.ID}); err != nil {
+			return err
+		}
+		return childTraces.Append(filepath.Join(config.SessionsDir(), sessionID+".subagents.json"), event)
+	})
 	var networkAuditMu sync.Mutex
 	var pendingNetworkAudits []egress.Event
 	mcpResult := mcp.CreateBackedTools(ctx, cwd, servers, mcp.Options{Authorize: func(name string, server config.MCPServerConfig) bool {
@@ -103,6 +131,7 @@ func run(ctx context.Context, argv []string) error {
 		return err
 	}})
 	definitions := append(toolRegistry.List(), mcpResult.Tools...)
+	definitions = append(definitions, childManager.Definition())
 	toolRegistry = tools.NewRegistry(definitions, tools.Metadata{Skills: discoveredSkills, MCPServers: mcpResult.Servers}).WithDisposer(mcpResult.Dispose)
 	var disposeToolsOnce sync.Once
 	disposeTools := func() { disposeToolsOnce.Do(func() { _ = toolRegistry.Dispose(ctx) }) }
@@ -130,7 +159,6 @@ func run(ctx context.Context, argv []string) error {
 	}
 
 	store := session.Store{Dir: config.SessionsDir(), Context: ctx}
-	sessionID := startup.ResumeID
 	resuming := sessionID != ""
 	messages := []message.Message{message.SystemMessage(systemPrompt)}
 	var sessionTasks []taskstate.Task

@@ -147,3 +147,28 @@ func TestNetworkAuditIsDurableAndRequiresEffectRecovery(t *testing.T) {
 		t.Fatalf("network effect did not block unsafe automatic resume: %#v, %v", loaded, err)
 	}
 }
+
+func TestSubagentEventsAreTypedAndRecoverable(t *testing.T) {
+	store := Store{Dir: t.TempDir()}
+	if err := store.Save(Record{ID: "session-1", Messages: []message.Message{message.UserMessage("investigate")}}); err != nil {
+		t.Fatal(err)
+	}
+	j, err := store.OpenJournal("session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []EventKind{EventSubagentStarted, EventSubagentCompleted} {
+		if _, err := j.Append(Event{Kind: kind, SubagentID: "sa-00000001"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := j.Append(Event{Kind: EventSubagentStarted, SubagentID: "../escape"}); err == nil {
+		t.Fatal("invalid subagent id accepted")
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Load("session-1"); err != nil {
+		t.Fatalf("subagent events did not replay: %v", err)
+	}
+}
