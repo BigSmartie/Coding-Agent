@@ -1,6 +1,6 @@
 {
   "name": "mythoscode-vscode",
-  "displayName": "MythosCode",
+  "displayName": "BigSmartie MythosCode",
   "description": "Open MythosCode in the active workspace and prepare file context for review.",
   "version": "0.1.0",
   "publisher": "bigsmartie",

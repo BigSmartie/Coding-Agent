@@ -19,5 +19,5 @@ this directory in VS Code and press F5 to run an Extension Development Host.
 To install without Marketplace, run `npx @vscode/vsce package --no-dependencies`
 here and use VS Code's **Install from VSIX** action.
 
-The Marketplace extension ID is `bigsmartie.mythoscode-vscode`. Install this ID
-to receive future updates for the renamed extension.
+The Marketplace listing is **BigSmartie MythosCode**, with extension ID
+`bigsmartie.mythoscode-vscode`. Install this ID to receive future updates.
