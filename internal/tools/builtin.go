@@ -23,6 +23,8 @@ func Builtins(cwd string, permission PermissionManager, skillLoader SkillLoader)
 		listFilesTool(),
 		grepFilesTool(),
 		readFileTool(),
+		readNotebookTool(),
+		editNotebookCellTool(),
 		writeFileTool(),
 		modifyFileTool(),
 		editFileTool(),

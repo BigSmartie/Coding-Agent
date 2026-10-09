@@ -272,6 +272,11 @@ printf '/help\n/exit\n' | MINI_CODE_MODEL_MODE=mock go run ./cmd/minicode
 /cmd [cwd::]<command> [args...]
 ```
 
+P2.1 增加 `read_notebook` 和 `edit_notebook_cell` 工具，可分页读取 Jupyter
+Notebook 的源代码单元，并在核对 SHA-256 和人工审查差异后修改单个单元。
+修改代码单元会清除旧输出和执行计数；工具不会执行代码。详见
+[P2.1 RFC](docs/rfc/p2-1-notebook-editing.md)。
+
 ## 整体架构
 
 可以把 Go 版看成几层协作的运行时：
