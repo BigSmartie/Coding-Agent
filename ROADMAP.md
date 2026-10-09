@@ -80,6 +80,9 @@ attestation service.
 
 ## P2: Optional product breadth
 
+The Windows-first P2 scope is complete. See [P2_DEVELOPMENT.md](P2_DEVELOPMENT.md)
+for acceptance evidence and operational limits.
+
 - P2.1 reviewed Jupyter notebook cell editing: implemented; see
   [RFC](docs/rfc/p2-1-notebook-editing.md)
 - P2.2 built-in, reviewed web search/fetch: implemented; see
